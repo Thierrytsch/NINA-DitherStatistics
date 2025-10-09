@@ -1,0 +1,16 @@
+{
+  "Identifier": "DitherStatistics",
+  "Name": "Dither Statistics",
+  "Version": "1.0.1.0",
+  "MinimumApplicationVersion": "3.0.0.1001",
+  "Author": "Thierry Tschanz",
+  "Homepage": "https://github.com/Thierrytsch/NINA-DitherStatistics",
+  "Repository": "https://github.com/Thierrytsch/NINA-DitherStatistics",
+  "License": "MPL-2.0",
+  "LicenseURL": "https://www.mozilla.org/en-US/MPL/2.0/",
+  "Tags": [ "imaging", "guiding", "dithering", "statistics", "phd2" ],
+  "Description": "Visualizes and analyzes dithering performance with real-time statistics and charts. Direct PHD2 integration for accurate pixel shift tracking.",
+  "FeaturedImageURL": "",
+  "ScreenshotURL": "",
+  "Changelog": "v1.0.1.0: Added direct PHD2 integration for accurate dither detection and pixel shift tracking"
+}

@@ -1,0 +1,56 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net8.0-windows</TargetFramework>
+		<OutputType>Library</OutputType>
+		<RootNamespace>DitherStatistics.Plugin</RootNamespace>
+		<AssemblyName>ThierryTschanz.NINA.Ditherstatistics</AssemblyName>
+		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+		<UseWPF>true</UseWPF>
+		<PlatformTarget>x64</PlatformTarget>
+	</PropertyGroup>
+	<PropertyGroup>
+		<Version>1.0.1.0</Version>
+		<AssemblyVersion>1.0.1.0</AssemblyVersion>
+		<FileVersion>1.0.1.0</FileVersion>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+		<PackageReference Include="LiveCharts" Version="0.9.7" />
+		<PackageReference Include="LiveCharts.Wpf" Version="0.9.7">
+			<PrivateAssets>None</PrivateAssets>
+			<ExcludeAssets>None</ExcludeAssets>
+		</PackageReference>
+		<PackageReference Include="NINA.Core" Version="3.1.2.9001" />
+		<PackageReference Include="NINA.Equipment" Version="3.1.2.9001" />
+		<PackageReference Include="NINA.Plugin" Version="3.1.2.9001" />
+		<PackageReference Include="NINA.WPF.Base" Version="3.1.2.9001" />
+	</ItemGroup>
+
+	<!-- Resource Dictionary - MUSS kopiert werden -->
+	<ItemGroup>
+		<None Update="DitherStatisticsDataTemplates.xaml">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<!-- Force copy LiveCharts DLLs to output -->
+	<ItemGroup>
+		<None Include="$(NuGetPackageRoot)livecharts\0.9.7\lib\net45\LiveCharts.dll">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<Visible>false</Visible>
+		</None>
+		<None Include="$(NuGetPackageRoot)livecharts.wpf\0.9.7\lib\net45\LiveCharts.Wpf.dll">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<Visible>false</Visible>
+		</None>
+	</ItemGroup>
+	<ItemGroup>
+		<None Update="manifest.json">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+	<!-- Post-Build: Copy to NINA Plugins folder -->
+	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
+		<Exec Command="xcopy &quot;$(TargetDir)*.*&quot; &quot;$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics\&quot; /Y /S /I" />
+	</Target>
+</Project>
