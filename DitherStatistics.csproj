@@ -25,15 +25,11 @@
 		<PackageReference Include="NINA.Plugin" Version="3.1.2.9001" />
 		<PackageReference Include="NINA.WPF.Base" Version="3.1.2.9001" />
 	</ItemGroup>
-
-	<!-- Resource Dictionary - MUSS kopiert werden -->
 	<ItemGroup>
 		<None Update="DitherStatisticsDataTemplates.xaml">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
-
-	<!-- Force copy LiveCharts DLLs to output -->
 	<ItemGroup>
 		<None Include="$(NuGetPackageRoot)livecharts\0.9.7\lib\net45\LiveCharts.dll">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -49,7 +45,6 @@
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
-	<!-- Post-Build: Copy to NINA Plugins folder -->
 	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
 		<Exec Command="xcopy &quot;$(TargetDir)*.*&quot; &quot;$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics\&quot; /Y /S /I" />
 	</Target>

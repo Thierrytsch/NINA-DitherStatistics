@@ -513,7 +513,7 @@
                                 <Button Content="💾 Export"
                                         Command="{Binding ExportMetricsCommand}"
                                         Style="{StaticResource QualityButton}"
-                                        ToolTip="Export detailed report"/>
+                                        ToolTip="Export detailed report (TXT)"/>
                             </StackPanel>
                         </Grid>
                     </StackPanel>
@@ -565,7 +565,7 @@
                                   Foreground="White"
                                   Margin="0,0,0,10"/>
 
-                        <UniformGrid Columns="1" Rows="2">
+                        <UniformGrid Columns="1" Rows="3">
                             <Button Content="Clear Data" 
                                    Command="{Binding ClearDataCommand}" 
                                    Background="{DynamicResource ButtonBackgroundBrush}"
@@ -575,13 +575,24 @@
                                    BorderThickness="0"
                                    Cursor="Hand"/>
 
-                            <Button Content="Export CSV" 
-                                   Command="{Binding ExportDataCommand}" 
+                            <Button Content="📄 Export Events CSV" 
+                                   Command="{Binding ExportDitherEventsCsvCommand}" 
+                                   Background="{DynamicResource ButtonBackgroundBrush}"
+                                   Foreground="White"
+                                   Padding="10,8"
+                                   Margin="0,0,0,5"
+                                   BorderThickness="0"
+                                   Cursor="Hand"
+                                   ToolTip="Export dither events to CSV (timestamps, pixel shifts, settle times)"/>
+
+                            <Button Content="📊 Export Metrics CSV" 
+                                   Command="{Binding ExportQualityMetricsCsvCommand}" 
                                    Background="{DynamicResource ButtonBackgroundBrush}"
                                    Foreground="White"
                                    Padding="10,8"
                                    BorderThickness="0"
-                                   Cursor="Hand"/>
+                                   Cursor="Hand"
+                                   ToolTip="Export quality metrics to CSV (CD, Voronoi CV, GFM, etc.)"/>
                         </UniformGrid>
                     </StackPanel>
                 </Border>

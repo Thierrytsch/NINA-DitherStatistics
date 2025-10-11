@@ -83,9 +83,15 @@ namespace DitherStatistics.Plugin {
         public double? PixelShiftY { get; set; }
         public bool Success { get; set; }
 
+        // Cumulative position tracking for CSV export
+        public double CumulativeX { get; set; }
+        public double CumulativeY { get; set; }
+
         public DitherEvent() {
             StartTime = DateTime.Now;
             Success = false;
+            CumulativeX = 0.0;
+            CumulativeY = 0.0;
         }
     }
 

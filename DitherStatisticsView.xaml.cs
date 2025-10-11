@@ -1,10 +1,4 @@
-﻿// ============================================================================
-// NINA Dither Statistics Plugin
-// View Code-Behind (minimal, only InitializeComponent)
-// Filename: DitherStatisticsView.xaml.cs
-// ============================================================================
-
-using System.Windows.Controls;
+﻿using System.Windows.Controls;
 
 namespace DitherStatistics.Plugin {
 

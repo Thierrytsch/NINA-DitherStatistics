@@ -287,13 +287,15 @@ namespace DitherStatistics.Plugin {
         #region Commands
 
         public ICommand ClearDataCommand { get; private set; }
-        public ICommand ExportDataCommand { get; private set; }
+        public ICommand ExportDitherEventsCsvCommand { get; private set; }
+        public ICommand ExportQualityMetricsCsvCommand { get; private set; }
         public ICommand RecalculateMetricsCommand { get; private set; }
         public ICommand ExportMetricsCommand { get; private set; }
 
         private void InitializeCommands() {
             ClearDataCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ClearData);
-            ExportDataCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ExportData);
+            ExportDitherEventsCsvCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ExportDitherEventsCsv);
+            ExportQualityMetricsCsvCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ExportQualityMetricsCsv);
         }
 
         private void InitializeQualityMetrics() {
@@ -321,9 +323,96 @@ namespace DitherStatistics.Plugin {
             Logger.Info("Dither statistics cleared");
         }
 
-        private void ExportData() {
-            Logger.Info("Export functionality - to be implemented");
-            // TODO: Implement CSV export in future version
+        private void ExportDitherEventsCsv() {
+            if (ditherEvents.Count == 0) {
+                Logger.Warning("No dither events to export");
+                return;
+            }
+
+            try {
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string filename = $"DitherEvents_{timestamp}.csv";
+                string path = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    "N.I.N.A",
+                    "DitherStatistics",
+                    filename
+                );
+
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
+
+                // Build CSV content
+                var csv = new System.Text.StringBuilder();
+
+                // Header
+                csv.AppendLine("Event Number,Timestamp Start,Timestamp End,Pixel Shift X,Pixel Shift Y,Cumulative X,Cumulative Y,Settle Time (s),Success");
+
+                // Data rows
+                for (int i = 0; i < ditherEvents.Count; i++) {
+                    var evt = ditherEvents[i];
+                    csv.AppendLine($"{i + 1}," +
+                        $"{evt.StartTime:yyyy-MM-dd HH:mm:ss}," +
+                        $"{evt.EndTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "N/A"}," +
+                        $"{evt.PixelShiftX?.ToString("F4") ?? "N/A"}," +
+                        $"{evt.PixelShiftY?.ToString("F4") ?? "N/A"}," +
+                        $"{evt.CumulativeX:F4}," +
+                        $"{evt.CumulativeY:F4}," +
+                        $"{evt.SettleTime?.ToString("F2") ?? "N/A"}," +
+                        $"{evt.Success}");
+                }
+
+                System.IO.File.WriteAllText(path, csv.ToString());
+                Logger.Info($"Dither events exported to: {path}");
+            } catch (Exception ex) {
+                Logger.Error($"Error exporting dither events: {ex.Message}");
+            }
+        }
+
+        private void ExportQualityMetricsCsv() {
+            if (QualityResult == null) {
+                Logger.Warning("No quality metrics to export");
+                return;
+            }
+
+            try {
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string filename = $"QualityMetrics_{timestamp}.csv";
+                string path = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    "N.I.N.A",
+                    "DitherStatistics",
+                    filename
+                );
+
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
+
+                // Build CSV content
+                var csv = new System.Text.StringBuilder();
+
+                // Header
+                csv.AppendLine("Metric,Value,Unit,Rating");
+
+                // Primary Metrics
+                csv.AppendLine($"Total Dithers,{QualityResult.TotalDithers},count,");
+                csv.AppendLine($"Combined Quality Score,{QualityResult.CombinedScore:F4},0-1 scale,{QualityResult.QualityRating}");
+                csv.AppendLine($"Centered L2 Discrepancy,{QualityResult.CenteredL2Discrepancy:F6},lower is better,{GetCDRatingShort(QualityResult.CenteredL2Discrepancy)}");
+                csv.AppendLine($"Voronoi CV,{QualityResult.VoronoiCV:F6},lower is better,{GetVoronoiRatingShort(QualityResult.VoronoiCV)}");
+                csv.AppendLine($"Nearest Neighbor Index,{QualityResult.NearestNeighborIndex:F4},~1.0 = random,{GetNNIRatingShort(QualityResult.NearestNeighborIndex)}");
+
+                // Drizzle Metrics
+                csv.AppendLine($"Gap Fill Metric 1x Drizzle,{QualityResult.GapFillMetric_1x:F6},0-1 scale,{(QualityResult.GapFillMetric_1x >= 0.98 ? "Good" : "Poor")}");
+                csv.AppendLine($"Gap Fill Metric 2x Drizzle,{QualityResult.GapFillMetric_2x:F6},0-1 scale,{(QualityResult.GapFillMetric_2x >= 0.95 ? "Good" : "Poor")}");
+                csv.AppendLine($"Gap Fill Metric 3x Drizzle,{QualityResult.GapFillMetric_3x:F6},0-1 scale,{(QualityResult.GapFillMetric_3x >= 0.90 ? "Good" : "Poor")}");
+
+                // Recommendation
+                csv.AppendLine();
+                csv.AppendLine($"Recommendation,\"{QualityResult.Recommendation}\",,");
+
+                System.IO.File.WriteAllText(path, csv.ToString());
+                Logger.Info($"Quality metrics exported to: {path}");
+            } catch (Exception ex) {
+                Logger.Error($"Error exporting quality metrics: {ex.Message}");
+            }
         }
 
         private void RecalculateQualityMetrics() {
@@ -342,7 +431,7 @@ namespace DitherStatistics.Plugin {
                 string filename = $"DitherQuality_{timestamp}.txt";
                 string path = System.IO.Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                    "NINA",
+                    "N.I.N.A",
                     "DitherStatistics",
                     filename
                 );
@@ -422,16 +511,20 @@ namespace DitherStatistics.Plugin {
                     currentDither.Success = e.Success;
                     currentDither.SettleTime = (currentDither.EndTime.Value - currentDither.StartTime).TotalSeconds;
 
+                    // Update cumulative position (absolute chart position)
+                    cumulativeX += currentDither.PixelShiftX.Value;
+                    cumulativeY += currentDither.PixelShiftY.Value;
+
+                    // Store cumulative position in event
+                    currentDither.CumulativeX = cumulativeX;
+                    currentDither.CumulativeY = cumulativeY;
+
                     // Add to collection
                     ditherEvents.Add(currentDither);
 
                     // Update UI on dispatcher thread
                     System.Windows.Application.Current?.Dispatcher.Invoke(() => {
                         SettleTimeValues.Add(currentDither.SettleTime.Value);
-
-                        // Update cumulative position (absolute chart position)
-                        cumulativeX += currentDither.PixelShiftX.Value;
-                        cumulativeY += currentDither.PixelShiftY.Value;
 
                         // Add point with cumulative position AND delta values
                         PixelShiftValues.Add(new PixelShiftPoint(
