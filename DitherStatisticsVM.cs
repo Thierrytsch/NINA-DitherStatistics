@@ -13,6 +13,7 @@ using System.ComponentModel.Composition;
 using System.Linq;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Collections.Generic;
 
 namespace DitherStatistics.Plugin {
     /// <summary>
@@ -20,12 +21,16 @@ namespace DitherStatistics.Plugin {
     /// Dateiname: DitherStatisticsVM.cs
     /// </summary>
     [Export(typeof(IDockableVM))]
-    public class DitherStatisticsVM : BaseINPC, IDockableVM, IGuiderConsumer {
+    public partial class DitherStatisticsVM : BaseINPC, IDockableVM, IGuiderConsumer {
         private readonly ObservableCollection<DitherEvent> ditherEvents = new ObservableCollection<DitherEvent>();
         private readonly IGuiderMediator guiderMediator;
         private readonly PHD2Client phd2Client;
         private DitherEvent currentDither = null;
         private readonly Random random = new Random();
+
+        // Cumulative position tracking for absolute chart display
+        private double cumulativeX = 0.0;
+        private double cumulativeY = 0.0;
 
         [ImportingConstructor]
         public DitherStatisticsVM(IGuiderMediator guiderMediator) {
@@ -39,6 +44,9 @@ namespace DitherStatistics.Plugin {
 
             // Initialize commands
             InitializeCommands();
+
+            // Initialize quality metrics
+            InitializeQualityMetrics();
 
             // Subscribe to NINA guider events (optional, for connection monitoring)
             SubscribeToGuiderEvents();
@@ -179,16 +187,118 @@ namespace DitherStatistics.Plugin {
             }
         }
 
+        // Total Drift Properties - Spannweite der Verteilung
+        private double totalDriftX;
+        public double TotalDriftX {
+            get => totalDriftX;
+            set {
+                totalDriftX = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        private double totalDriftY;
+        public double TotalDriftY {
+            get => totalDriftY;
+            set {
+                totalDriftY = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        #endregion
+
+        #region Properties - Quality Metrics
+
+        private DitherQualityMetrics.QualityResult _qualityResult;
+        public DitherQualityMetrics.QualityResult QualityResult {
+            get => _qualityResult;
+            set {
+                _qualityResult = value;
+                RaisePropertyChanged();
+                RaisePropertyChanged(nameof(HasQualityData));
+                RaisePropertyChanged(nameof(QualityRatingColor));
+                RaisePropertyChanged(nameof(CDValue));
+                RaisePropertyChanged(nameof(CDRating));
+                RaisePropertyChanged(nameof(GFM1xValue));
+                RaisePropertyChanged(nameof(GFM2xValue));
+                RaisePropertyChanged(nameof(GFM3xValue));
+                RaisePropertyChanged(nameof(VoronoiValue));
+                RaisePropertyChanged(nameof(VoronoiRating));
+                RaisePropertyChanged(nameof(CombinedScoreValue));
+                RaisePropertyChanged(nameof(NNIValue));
+                RaisePropertyChanged(nameof(NNIRating));
+            }
+        }
+
+        public bool HasQualityData => QualityResult != null && PixelShiftValues.Count >= 4;
+
+        public string QualityRatingColor => QualityResult?.QualityRating switch {
+            "Excellent" => "#4CAF50",
+            "Good" => "#8BC34A",
+            "Acceptable" => "#FFC107",
+            "Fair" => "#FF9800",
+            "Poor" => "#F44336",
+            _ => "#9E9E9E"
+        };
+
+        public string CDValue => QualityResult != null
+            ? $"{QualityResult.CenteredL2Discrepancy:F4}"
+            : "N/A";
+
+        public string CDRating => QualityResult != null
+            ? GetCDRatingShort(QualityResult.CenteredL2Discrepancy)
+            : "";
+
+        public string GFM1xValue => QualityResult != null
+            ? $"{QualityResult.GapFillMetric_1x:P1}"
+            : "N/A";
+
+        public string GFM2xValue => QualityResult != null
+            ? $"{QualityResult.GapFillMetric_2x:P1}"
+            : "N/A";
+
+        public string GFM3xValue => QualityResult != null
+            ? $"{QualityResult.GapFillMetric_3x:P1}"
+            : "N/A";
+
+        public string VoronoiValue => QualityResult != null
+            ? $"{QualityResult.VoronoiCV:F3}"
+            : "N/A";
+
+        public string VoronoiRating => QualityResult != null
+            ? GetVoronoiRatingShort(QualityResult.VoronoiCV)
+            : "";
+
+        public string CombinedScoreValue => QualityResult != null
+            ? $"{QualityResult.CombinedScore:F3}"
+            : "N/A";
+
+        public string NNIValue => QualityResult != null
+            ? $"{QualityResult.NearestNeighborIndex:F2}"
+            : "N/A";
+
+        public string NNIRating => QualityResult != null
+            ? GetNNIRatingShort(QualityResult.NearestNeighborIndex)
+            : "";
+
         #endregion
 
         #region Commands
 
         public ICommand ClearDataCommand { get; private set; }
         public ICommand ExportDataCommand { get; private set; }
+        public ICommand RecalculateMetricsCommand { get; private set; }
+        public ICommand ExportMetricsCommand { get; private set; }
 
         private void InitializeCommands() {
             ClearDataCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ClearData);
             ExportDataCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ExportData);
+        }
+
+        private void InitializeQualityMetrics() {
+            RecalculateMetricsCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(RecalculateQualityMetrics);
+            ExportMetricsCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ExportQualityMetrics);
         }
 
         private void ClearData() {
@@ -196,6 +306,16 @@ namespace DitherStatistics.Plugin {
             SettleTimeValues.Clear();
             PixelShiftValues.Clear();
             currentDither = null;
+            QualityResult = null;
+
+            // Reset cumulative position
+            cumulativeX = 0.0;
+            cumulativeY = 0.0;
+
+            // Reset total drift
+            TotalDriftX = 0.0;
+            TotalDriftY = 0.0;
+
             UpdatePixelShiftColors();
             UpdateStatistics();
             Logger.Info("Dither statistics cleared");
@@ -204,6 +324,38 @@ namespace DitherStatistics.Plugin {
         private void ExportData() {
             Logger.Info("Export functionality - to be implemented");
             // TODO: Implement CSV export in future version
+        }
+
+        private void RecalculateQualityMetrics() {
+            UpdateQualityMetrics();
+            Logger.Info("Quality metrics manually recalculated");
+        }
+
+        private void ExportQualityMetrics() {
+            if (QualityResult == null) {
+                Logger.Warning("No quality metrics to export");
+                return;
+            }
+
+            try {
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string filename = $"DitherQuality_{timestamp}.txt";
+                string path = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    "NINA",
+                    "DitherStatistics",
+                    filename
+                );
+
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
+
+                string report = DitherQualityMetrics.FormatMetricsReport(QualityResult);
+                System.IO.File.WriteAllText(path, report);
+
+                Logger.Info($"Quality metrics exported to: {path}");
+            } catch (Exception ex) {
+                Logger.Error($"Error exporting quality metrics: {ex.Message}");
+            }
         }
 
         #endregion
@@ -276,15 +428,25 @@ namespace DitherStatistics.Plugin {
                     // Update UI on dispatcher thread
                     System.Windows.Application.Current?.Dispatcher.Invoke(() => {
                         SettleTimeValues.Add(currentDither.SettleTime.Value);
+
+                        // Update cumulative position (absolute chart position)
+                        cumulativeX += currentDither.PixelShiftX.Value;
+                        cumulativeY += currentDither.PixelShiftY.Value;
+
+                        // Add point with cumulative position AND delta values
                         PixelShiftValues.Add(new PixelShiftPoint(
-                            currentDither.PixelShiftX.Value,
-                            currentDither.PixelShiftY.Value
+                            cumulativeX,                      // Absolute X position for chart
+                            cumulativeY,                      // Absolute Y position for chart
+                            currentDither.PixelShiftX.Value,  // Delta X for tooltip
+                            currentDither.PixelShiftY.Value   // Delta Y for tooltip
                         ));
+
                         UpdatePixelShiftColors();
                         UpdateStatistics();
+                        UpdateQualityMetrics();
                     });
 
-                    Logger.Info($"📊 Dither recorded: {currentDither.SettleTime:F2}s settle, shift: ({currentDither.PixelShiftX:F2}, {currentDither.PixelShiftY:F2}) px");
+                    Logger.Info($"📊 Dither recorded: {currentDither.SettleTime:F2}s settle, shift: ({currentDither.PixelShiftX:F2}, {currentDither.PixelShiftY:F2}) px, cumulative: ({cumulativeX:F2}, {cumulativeY:F2})");
 
                     currentDither = null;
                 } else {
@@ -318,6 +480,55 @@ namespace DitherStatistics.Plugin {
 
         #endregion
 
+        #region Quality Metrics Methods
+
+        private void UpdateQualityMetrics() {
+            if (PixelShiftValues.Count < 4) {
+                QualityResult = null;
+                return;
+            }
+
+            try {
+                // Extract cumulative positions (X, Y) from PixelShiftValues
+                var positions = PixelShiftValues
+                    .Select(p => (p.X, p.Y))  // Use cumulative positions
+                    .ToList();
+
+                // Calculate metrics with default pixfrac 0.6
+                QualityResult = DitherQualityMetrics.CalculateQualityMetrics(positions, pixfrac: 0.6);
+
+                Logger.Info($"Quality metrics updated: Score={QualityResult.CombinedScore:F3}, Rating={QualityResult.QualityRating}");
+            } catch (Exception ex) {
+                Logger.Error($"Error calculating quality metrics: {ex.Message}");
+                QualityResult = null;
+            }
+        }
+
+        private string GetCDRatingShort(double cd) {
+            if (cd < 0.02) return "Excellent";
+            if (cd < 0.05) return "Good";
+            if (cd < 0.08) return "OK";
+            if (cd < 0.10) return "Fair";
+            return "Poor";
+        }
+
+        private string GetVoronoiRatingShort(double cv) {
+            if (cv < 0.2) return "Excellent";
+            if (cv < 0.3) return "Good";
+            if (cv < 0.5) return "OK";
+            return "Poor";
+        }
+
+        private string GetNNIRatingShort(double nni) {
+            if (nni > 1.5) return "Excellent";
+            if (nni > 1.2) return "Good";
+            if (nni > 0.9) return "Acceptable";
+            if (nni > 0.7) return "Fair";
+            return "Poor";
+        }
+
+        #endregion
+
         #region Chart Methods
 
         private void ConfigureLiveCharts() {
@@ -345,7 +556,7 @@ namespace DitherStatistics.Plugin {
                     Stroke = System.Windows.Media.Brushes.DodgerBlue,
                     StrokeThickness = 2,
                     LineSmoothness = 0,
-                    LabelPoint = point => $"{point.Y:F2}s"  // NUR Sekundenwert
+                    LabelPoint = point => $"{point.Y:F2}s"
                 },
                 new LineSeries
                 {
@@ -412,21 +623,31 @@ namespace DitherStatistics.Plugin {
             }
 
             // Add scatter series for each point with gradient color
-            // OPTIMIZED TOOLTIP (nur X/Y Koordinaten)
+            // TOOLTIP: Show DELTA values (ΔX, ΔY), not cumulative position
             for (int i = 0; i < count; i++) {
                 double ratio = count > 1 ? (double)i / (count - 1) : 1.0;
                 byte red = (byte)(60 + (200 - 60) * ratio);
 
                 var pointColor = System.Windows.Media.Color.FromRgb(red, 0, 0);
 
+                var point = PixelShiftValues[i];
+
                 var scatterSeries = new ScatterSeries {
-                    Values = new ChartValues<PixelShiftPoint> { PixelShiftValues[i] },
+                    Values = new ChartValues<PixelShiftPoint> { point },
                     PointGeometry = DefaultGeometries.Circle,
                     MinPointShapeDiameter = 6,
                     MaxPointShapeDiameter = 6,
                     Fill = new System.Windows.Media.SolidColorBrush(pointColor),
                     Stroke = System.Windows.Media.Brushes.Transparent,
-                    LabelPoint = point => $"X: {point.X:F2}  Y: {point.Y:F2}"  // NUR X/Y Koordinaten
+                    // TOOLTIP shows DELTA, not cumulative position!
+                    // Cast ChartPoint.Instance to PixelShiftPoint to access DeltaX/DeltaY
+                    LabelPoint = chartPoint => {
+                        var pixelPoint = chartPoint.Instance as PixelShiftPoint;
+                        if (pixelPoint != null) {
+                            return $"ΔX: {pixelPoint.DeltaX:F2}  ΔY: {pixelPoint.DeltaY:F2}";
+                        }
+                        return "";
+                    }
                 };
 
                 _pixelShiftSeriesCollection.Add(scatterSeries);
@@ -477,6 +698,18 @@ namespace DitherStatistics.Plugin {
                 MinSettleTime = 0;
                 MaxSettleTime = 0;
                 StdDevSettleTime = 0;
+            }
+
+            // Calculate Total Drift as Spannweite (Max - Min) über alle Punkte
+            if (PixelShiftValues.Count > 0) {
+                var xValues = PixelShiftValues.Select(p => p.X).ToList();
+                var yValues = PixelShiftValues.Select(p => p.Y).ToList();
+
+                TotalDriftX = xValues.Max() - xValues.Min();
+                TotalDriftY = yValues.Max() - yValues.Min();
+            } else {
+                TotalDriftX = 0.0;
+                TotalDriftY = 0.0;
             }
         }
 
