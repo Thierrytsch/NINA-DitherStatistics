@@ -398,13 +398,16 @@ Important Limitations
 
 Installation
 
-    Download the latest release from the Releases page
-    Close N.I.N.A. if running
-    Extract the plugin files to: %localappdata%\NINA\Plugins\3.0.0\DitherStatistics\
-    Restart N.I.N.A.
-    Navigate to: Options → Plugins → Dither Statistics to enable
-    Restart N.I.N.A. again
-    Go to: Imaging Tab → Panel Selector → Activate "Dither Statistics"
+    From NINA Plugin Manager (Recommended)
+        1. Open N.I.N.A.
+        2. Go to: **Options** → **Plugins** → **Available**
+        3. Find **"Dither Statistics"**
+        4. Click **"Install"**
+        5. Restart N.I.N.A.
+        6. Go to: **Imaging Tab** → **Panel Selector** → Activate "Dither Statistics"
+
+    Manual Installation
+        Download the latest release from [Releases](https://github.com/Thierrytsch/NINA-DitherStatistics/releases)...
 
 Usage
 Basic Operation
