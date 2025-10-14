@@ -1,18 +1,107 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
+		<!-- .NET & Output Settings -->
 		<TargetFramework>net8.0-windows</TargetFramework>
 		<OutputType>Library</OutputType>
 		<RootNamespace>DitherStatistics.Plugin</RootNamespace>
 		<AssemblyName>ThierryTschanz.NINA.Ditherstatistics</AssemblyName>
-		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 		<UseWPF>true</UseWPF>
 		<PlatformTarget>x64</PlatformTarget>
+		
+		<!-- ✅ WICHTIG: Auf true setzen, damit Properties unten verwendet werden! -->
+		<GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+		<Deterministic>true</Deterministic>
 	</PropertyGroup>
+	
+	<!-- ============================================ -->
+	<!-- ZENTRALE VERSION - NUR HIER ÄNDERN! -->
+	<!-- ============================================ -->
 	<PropertyGroup>
-		<Version>1.1.0.1</Version>
-		<AssemblyVersion>1.1.0.1</AssemblyVersion>
-		<FileVersion>1.1.0.1</FileVersion>
+		<Version>1.1.0.2</Version>
+		<AssemblyVersion>1.1.0.2</AssemblyVersion>
+		<FileVersion>1.1.0.2</FileVersion>
 	</PropertyGroup>
+	
+	<!-- ============================================ -->
+	<!-- PLUGIN METADATEN (aus AssemblyInfo.cs) -->
+	<!-- ============================================ -->
+	<PropertyGroup>
+		<!-- Basic Info -->
+		<AssemblyTitle>Dither Statistics</AssemblyTitle>
+		<Product>Dither Statistics</Product>
+		<Description>Visualizes dithering performance</Description>
+		<Company>Thierry Tschanz</Company>
+		<Authors>Thierry Tschanz</Authors>
+		<Copyright>Copyright © 2025 Thierry Tschanz</Copyright>
+		
+		<!-- GUID - NIEMALS ÄNDERN! -->
+		<!-- <Guid>8622888a-ac8c-48f0-9be8-40d5d123fb7d</Guid> -->
+		
+		<!-- COM Interop -->
+		<ComVisible>false</ComVisible>
+	</PropertyGroup>
+	
+	<!-- ============================================ -->
+	<!-- NINA PLUGIN METADATEN -->
+	<!-- ============================================ -->
+	<ItemGroup>
+		<!-- Minimum NINA Version -->
+		<AssemblyMetadata Include="MinimumApplicationVersion" Value="3.0.0.2017" />
+		
+		<!-- License -->
+		<AssemblyMetadata Include="License" Value="MPL-2.0" />
+		<AssemblyMetadata Include="LicenseURL" Value="https://www.mozilla.org/en-US/MPL/2.0/" />
+		
+		<!-- URLs -->
+		<AssemblyMetadata Include="Repository" Value="https://github.com/Thierrytsch/NINA-DitherStatistics" />
+		<AssemblyMetadata Include="Homepage" Value="https://github.com/Thierrytsch/NINA-DitherStatistics" />
+		<AssemblyMetadata Include="ChangelogURL" Value="https://github.com/Thierrytsch/NINA-DitherStatistics/CHANGELOG.md" />
+		
+		<!-- Tags -->
+		<AssemblyMetadata Include="Tags" Value="imaging,guiding,dithering,statistics,phd2,quality,analysis" />
+		
+		<!-- Screenshots/Images (optional, URLs eintragen wenn vorhanden) -->
+		<AssemblyMetadata Include="FeaturedImageURL" Value="https://raw.githubusercontent.com/Thierrytsch/NINA-DitherStatistics/main/DitherStatistics-Logo.png" />
+		<AssemblyMetadata Include="ScreenshotURL" Value="https://github.com/Thierrytsch/NINA-DitherStatistics/releases/download/v1.1.0.2/screenshot-main.png" />
+		
+		<!-- Long Description -->
+		<AssemblyMetadata Include="LongDescription" Value="Comprehensive dithering analysis plugin for N.I.N.A. with real-time statistics, visual charts, and experimental quality assessment.
+
+# Core Features
+* Real-time dither settle time tracking and visualization
+* X/Y pixel drift scatter plot with cumulative movements
+* Statistical analysis (avg, median, std dev, min/max, success rate)
+* Live updates during imaging sessions
+
+# Experimental Quality Assessment
+⚠️ EXPERIMENTAL: Advanced mathematical analysis of dither patterns using:
+* **Centered L₂ Discrepancy** - Global uniformity measurement from quasi-Monte Carlo theory
+* **Voronoi Cell CV** - Local spatial distribution and clustering analysis
+* **Drizzle Gap-Fill Metrics** - Sub-pixel coverage predictions for 1×, 2×, 3× drizzle
+* **Combined Quality Score** - Overall pattern quality rating with recommendations
+
+Minimum 4 dithers required for quality metrics. Assessments improve with 15+ positions.
+
+# Requirements
+* N.I.N.A. 3.0 or higher
+* .NET 8.0 Runtime
+* PHD2 or N.I.N.A. Direct Guider
+
+# Data Export
+Export comprehensive quality reports including all metrics, dither positions, and recommendations to text files.
+
+# Important Notes
+Quality assessment is experimental and provides guidance, not absolute measurements. Real-world results depend on many factors including seeing conditions, tracking accuracy, and processing techniques.
+
+# Getting Help
+Visit the #plugin-discussions channel on [NINA Discord](https://discord.com/invite/rWRbVbw) or file issues at the [GitHub repository](https://github.com/Thierrytsch/NINA-DitherStatistics/issues).
+
+For complete documentation, algorithms, and detailed explanations, see the full README on GitHub." />
+	</ItemGroup>
+	
+	<!-- ============================================ -->
+	<!-- DEPENDENCIES -->
+	<!-- ============================================ -->
 	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
 		<PackageReference Include="LiveCharts" Version="0.9.7" />
@@ -25,11 +114,17 @@
 		<PackageReference Include="NINA.Plugin" Version="3.1.2.9001" />
 		<PackageReference Include="NINA.WPF.Base" Version="3.1.2.9001" />
 	</ItemGroup>
+	
+	<!-- ============================================ -->
+	<!-- FILES TO COPY -->
+	<!-- ============================================ -->
 	<ItemGroup>
 		<None Update="DitherStatisticsDataTemplates.xaml">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
+	
+	<!-- LiveCharts DLLs kopieren -->
 	<ItemGroup>
 		<None Include="$(NuGetPackageRoot)livecharts\0.9.7\lib\net45\LiveCharts.dll">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -40,11 +135,10 @@
 			<Visible>false</Visible>
 		</None>
 	</ItemGroup>
-	<ItemGroup>
-		<None Update="manifest.json">
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</None>
-	</ItemGroup>
+	
+	<!-- ============================================ -->
+	<!-- POST-BUILD: Zu NINA kopieren -->
+	<!-- ============================================ -->
 	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
 		<Exec Command="xcopy &quot;$(TargetDir)*.*&quot; &quot;$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics\&quot; /Y /S /I" />
 	</Target>
