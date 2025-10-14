@@ -1,7 +1,7 @@
 ﻿{
   "Identifier": "DitherStatistics",
   "Name": "Dither Statistics",
-  "Version": "1.1.0.0",
+  "Version": "1.1.0.1",
   "MinimumApplicationVersion": "3.0.0.1001",
   "Author": "Thierry Tschanz",
   "Homepage": "https://github.com/Thierrytsch/NINA-DitherStatistics",
@@ -12,5 +12,5 @@
   "Description": "Comprehensive dithering analysis plugin with real-time statistics, visual charts, and experimental quality assessment. Features include pixel drift tracking, settle time monitoring, and advanced pattern evaluation using Centered L₂ Discrepancy, Voronoi tessellation, and drizzle coverage metrics. Direct PHD2 integration for accurate pixel shift detection.",
   "FeaturedImageURL": "",
   "ScreenshotURL": "",
-  "Changelog": "v1.1.0.0: Added experimental Quality Assessment with Centered L₂ Discrepancy, Voronoi Cell CV, Drizzle Gap-Fill Metrics (1×/2×/3×), combined quality scoring, pattern recommendations, and detailed quality report export. Improved chart tooltips and UI formatting.\n\nv1.0.1.0: Added direct PHD2 integration for accurate dither detection and pixel shift tracking."
+  "Changelog": "v1.1.0.1: Added experimental Quality Assessment with Centered L₂ Discrepancy, Voronoi Cell CV, Drizzle Gap-Fill Metrics (1×/2×/3×), combined quality scoring, pattern recommendations, and detailed quality report export. Improved chart tooltips and UI formatting.\n\nv1.0.1.0: Added direct PHD2 integration for accurate dither detection and pixel shift tracking."
 }
