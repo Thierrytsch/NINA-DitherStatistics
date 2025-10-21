@@ -85,7 +85,7 @@ Minimum 4 dithers required for quality metrics. Assessments improve with 15+ pos
 # Requirements
 * N.I.N.A. 3.1 or higher
 * .NET 8.0 Runtime
-* PHD2 or N.I.N.A. Direct Guider
+* PHD2
 
 # Version 1.2 Changes
 * Migrated from LiveCharts to ScottPlot for better performance and NINA 3.2 compatibility
