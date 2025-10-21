@@ -11,3 +11,6 @@
 
 ## 1.1.0.2
 - Added wider description visible in N.I.N.A
+
+## 1.2.0.0
+- Added support for N.I.N.A 3.2

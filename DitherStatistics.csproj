@@ -7,21 +7,21 @@
 		<AssemblyName>ThierryTschanz.NINA.Ditherstatistics</AssemblyName>
 		<UseWPF>true</UseWPF>
 		<PlatformTarget>x64</PlatformTarget>
-		
+
 		<!-- ✅ WICHTIG: Auf true setzen, damit Properties unten verwendet werden! -->
 		<GenerateAssemblyInfo>true</GenerateAssemblyInfo>
 		<Deterministic>true</Deterministic>
 	</PropertyGroup>
-	
+
 	<!-- ============================================ -->
 	<!-- ZENTRALE VERSION - NUR HIER ÄNDERN! -->
 	<!-- ============================================ -->
 	<PropertyGroup>
-		<Version>1.1.0.2</Version>
-		<AssemblyVersion>1.1.0.2</AssemblyVersion>
-		<FileVersion>1.1.0.2</FileVersion>
+		<Version>1.2.0.0</Version>
+		<AssemblyVersion>1.2.0.0</AssemblyVersion>
+		<FileVersion>1.2.0.0</FileVersion>
 	</PropertyGroup>
-	
+
 	<!-- ============================================ -->
 	<!-- PLUGIN METADATEN (aus AssemblyInfo.cs) -->
 	<!-- ============================================ -->
@@ -33,37 +33,37 @@
 		<Company>Thierry Tschanz</Company>
 		<Authors>Thierry Tschanz</Authors>
 		<Copyright>Copyright © 2025 Thierry Tschanz</Copyright>
-		
+
 		<!-- GUID - NIEMALS ÄNDERN! -->
 		<!-- <Guid>8622888a-ac8c-48f0-9be8-40d5d123fb7d</Guid> -->
-		
+
 		<!-- COM Interop -->
 		<ComVisible>false</ComVisible>
 	</PropertyGroup>
-	
+
 	<!-- ============================================ -->
 	<!-- NINA PLUGIN METADATEN -->
 	<!-- ============================================ -->
 	<ItemGroup>
 		<!-- Minimum NINA Version -->
 		<AssemblyMetadata Include="MinimumApplicationVersion" Value="3.0.0.2017" />
-		
+
 		<!-- License -->
 		<AssemblyMetadata Include="License" Value="MPL-2.0" />
 		<AssemblyMetadata Include="LicenseURL" Value="https://www.mozilla.org/en-US/MPL/2.0/" />
-		
+
 		<!-- URLs -->
 		<AssemblyMetadata Include="Repository" Value="https://github.com/Thierrytsch/NINA-DitherStatistics" />
 		<AssemblyMetadata Include="Homepage" Value="https://github.com/Thierrytsch/NINA-DitherStatistics" />
 		<AssemblyMetadata Include="ChangelogURL" Value="https://github.com/Thierrytsch/NINA-DitherStatistics/CHANGELOG.md" />
-		
+
 		<!-- Tags -->
 		<AssemblyMetadata Include="Tags" Value="imaging,guiding,dithering,statistics,phd2,quality,analysis" />
-		
+
 		<!-- Screenshots/Images (optional, URLs eintragen wenn vorhanden) -->
 		<AssemblyMetadata Include="FeaturedImageURL" Value="https://raw.githubusercontent.com/Thierrytsch/NINA-DitherStatistics/main/DitherStatistics-Logo.png" />
-		<AssemblyMetadata Include="ScreenshotURL" Value="https://github.com/Thierrytsch/NINA-DitherStatistics/releases/download/v1.1.0.2/screenshot-main.png" />
-		
+		<AssemblyMetadata Include="ScreenshotURL" Value="https://github.com/Thierrytsch/NINA-DitherStatistics/releases/download/v1.2.0.0/screenshot-main.png" />
+
 		<!-- Long Description -->
 		<AssemblyMetadata Include="LongDescription" Value="Comprehensive dithering analysis plugin for N.I.N.A. with real-time statistics, visual charts, and experimental quality assessment.
 
@@ -83,9 +83,14 @@
 Minimum 4 dithers required for quality metrics. Assessments improve with 15+ positions.
 
 # Requirements
-* N.I.N.A. 3.0 or higher
+* N.I.N.A. 3.1 or higher
 * .NET 8.0 Runtime
 * PHD2 or N.I.N.A. Direct Guider
+
+# Version 1.2 Changes
+* Migrated from LiveCharts to ScottPlot for better performance and NINA 3.2 compatibility
+* Full compatibility with both NINA 3.1 and NINA 3.2
+* Optimized PostBuild to copy only necessary DLLs
 
 # Data Export
 Export comprehensive quality reports including all metrics, dither positions, and recommendations to text files.
@@ -98,48 +103,105 @@ Visit the #plugin-discussions channel on [NINA Discord](https://discord.com/invi
 
 For complete documentation, algorithms, and detailed explanations, see the full README on GitHub." />
 	</ItemGroup>
-	
+
 	<!-- ============================================ -->
 	<!-- DEPENDENCIES -->
 	<!-- ============================================ -->
 	<ItemGroup>
-		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
-		<PackageReference Include="LiveCharts" Version="0.9.7" />
-		<PackageReference Include="LiveCharts.Wpf" Version="0.9.7">
-			<PrivateAssets>None</PrivateAssets>
-			<ExcludeAssets>None</ExcludeAssets>
+		<!-- CommunityToolkit - wird von NINA bereitgestellt -->
+		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2">
+			<PrivateAssets>all</PrivateAssets>
+			<ExcludeAssets>runtime</ExcludeAssets>
 		</PackageReference>
-		<PackageReference Include="NINA.Core" Version="3.1.2.9001" />
-		<PackageReference Include="NINA.Equipment" Version="3.1.2.9001" />
-		<PackageReference Include="NINA.Plugin" Version="3.1.2.9001" />
-		<PackageReference Include="NINA.WPF.Base" Version="3.1.2.9001" />
+
+		<!-- ✅ ScottPlot - BEIDE Packages explizit referenzieren! -->
+		<PackageReference Include="ScottPlot" Version="4.1.74">
+			<!-- Keine ExcludeAssets - soll kopiert werden -->
+		</PackageReference>
+		<PackageReference Include="ScottPlot.WPF" Version="4.1.74">
+			<!-- Keine ExcludeAssets - soll kopiert werden -->
+		</PackageReference>
+
+		<!-- NINA Dependencies - Nicht kopieren! -->
+		<PackageReference Include="NINA.Core" Version="3.1.2.9001">
+			<PrivateAssets>all</PrivateAssets>
+			<ExcludeAssets>runtime</ExcludeAssets>
+		</PackageReference>
+		<PackageReference Include="NINA.Equipment" Version="3.1.2.9001">
+			<PrivateAssets>all</PrivateAssets>
+			<ExcludeAssets>runtime</ExcludeAssets>
+		</PackageReference>
+		<PackageReference Include="NINA.Plugin" Version="3.1.2.9001">
+			<PrivateAssets>all</PrivateAssets>
+			<ExcludeAssets>runtime</ExcludeAssets>
+		</PackageReference>
+		<PackageReference Include="NINA.WPF.Base" Version="3.1.2.9001">
+			<PrivateAssets>all</PrivateAssets>
+			<ExcludeAssets>runtime</ExcludeAssets>
+		</PackageReference>
 	</ItemGroup>
-	
+
 	<!-- ============================================ -->
-	<!-- FILES TO COPY -->
+	<!-- FILES TO EMBED -->
 	<!-- ============================================ -->
 	<ItemGroup>
-		<None Update="DitherStatisticsDataTemplates.xaml">
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</None>
+		<!-- XAML DataTemplates als Resource in DLL embedden -->
+		<Resource Include="DitherStatisticsDataTemplates.xaml" />
 	</ItemGroup>
-	
-	<!-- LiveCharts DLLs kopieren -->
-	<ItemGroup>
-		<None Include="$(NuGetPackageRoot)livecharts\0.9.7\lib\net45\LiveCharts.dll">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<Visible>false</Visible>
-		</None>
-		<None Include="$(NuGetPackageRoot)livecharts.wpf\0.9.7\lib\net45\LiveCharts.Wpf.dll">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<Visible>false</Visible>
-		</None>
-	</ItemGroup>
-	
+
+	<!-- ============================================ -->
+	<!-- PRE-BUILD: ScottPlot DLLs aus NuGet holen -->
+	<!-- ============================================ -->
+	<Target Name="CopyScottPlotDlls" BeforeTargets="Build">
+		<!-- Finde alle möglichen ScottPlot 4.1.74 DLLs -->
+		<ItemGroup>
+			<ScottPlot4_1_74 Include="$(NuGetPackageRoot)scottplot\4.1.74\**\ScottPlot.dll" />
+			<ScottPlotWPF4_1_74 Include="$(NuGetPackageRoot)scottplot.wpf\4.1.74\**\ScottPlot.WPF.dll" />
+		</ItemGroup>
+
+		<!-- Nimm die ERSTE gefundene (sollte die richtige sein) -->
+		<PropertyGroup>
+			<ScottPlotDll>@(ScottPlot4_1_74->'%(FullPath)')</ScottPlotDll>
+			<ScottPlotWPFDll>@(ScottPlotWPF4_1_74->'%(FullPath)')</ScottPlotWPFDll>
+		</PropertyGroup>
+
+		<!-- Schneide auf erstes Element (falls mehrere gefunden) -->
+		<PropertyGroup>
+			<ScottPlotDll>$(ScottPlotDll.Split(';')[0])</ScottPlotDll>
+			<ScottPlotWPFDll>$(ScottPlotWPFDll.Split(';')[0])</ScottPlotWPFDll>
+		</PropertyGroup>
+
+		<!-- Debug-Ausgabe -->
+		<Message Text="Found ScottPlot.dll at: $(ScottPlotDll)" Importance="high" />
+		<Message Text="Found ScottPlot.WPF.dll at: $(ScottPlotWPFDll)" Importance="high" />
+
+		<!-- Fehler wenn nicht gefunden -->
+		<Error Text="ScottPlot.dll 4.1.74 not found! Expected at: $(NuGetPackageRoot)scottplot\4.1.74\lib\" Condition="'$(ScottPlotDll)' == '' OR !Exists('$(ScottPlotDll)')" />
+		<Error Text="ScottPlot.WPF.dll 4.1.74 not found! Expected at: $(NuGetPackageRoot)scottplot.wpf\4.1.74\lib\" Condition="'$(ScottPlotWPFDll)' == '' OR !Exists('$(ScottPlotWPFDll)')" />
+
+		<!-- Kopiere DLLs -->
+		<Copy SourceFiles="$(ScottPlotDll)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+		<Copy SourceFiles="$(ScottPlotWPFDll)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+	</Target>
+
 	<!-- ============================================ -->
 	<!-- POST-BUILD: Zu NINA kopieren -->
 	<!-- ============================================ -->
-	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
-		<Exec Command="xcopy &quot;$(TargetDir)*.*&quot; &quot;$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics\&quot; /Y /S /I" />
+	<Target Name="PostBuild" AfterTargets="Build">
+		<!-- Erstelle Plugin-Ordner (mit Unterverzeichnissen falls nötig) -->
+		<MakeDir Directories="$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics" ContinueOnError="true" />
+
+		<!-- Kopiere Plugin-DLL -->
+		<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics" SkipUnchangedFiles="true" />
+
+		<!-- Kopiere PDB (optional, für Debugging) -->
+		<Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics" SkipUnchangedFiles="true" ContinueOnError="true" />
+
+		<!-- Kopiere deps.json -->
+		<Copy SourceFiles="$(TargetDir)$(TargetName).deps.json" DestinationFolder="$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics" SkipUnchangedFiles="true" ContinueOnError="true" />
+
+		<!-- Kopiere ScottPlot DLLs (falls vorhanden) -->
+		<Copy SourceFiles="$(TargetDir)ScottPlot.dll" DestinationFolder="$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)ScottPlot.dll')" />
+		<Copy SourceFiles="$(TargetDir)ScottPlot.WPF.dll" DestinationFolder="$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)ScottPlot.WPF.dll')" />
 	</Target>
 </Project>

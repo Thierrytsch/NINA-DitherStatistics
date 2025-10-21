@@ -1,6 +1,5 @@
-﻿using LiveCharts;
-using LiveCharts.Wpf;
-using LiveCharts.Configurations;
+﻿using ScottPlot;
+using ScottPlot.Plottable;
 using NINA.Core.Utility;
 using NINA.Equipment.Interfaces.Mediator;
 using NINA.Equipment.Interfaces.ViewModel;
@@ -14,10 +13,12 @@ using System.Linq;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Collections.Generic;
+using System.Windows;
 
 namespace DitherStatistics.Plugin {
     /// <summary>
     /// ViewModel for Dither Statistics Panel with PHD2 direct integration
+    /// Migrated from LiveCharts to ScottPlot 4.1.x for NINA 3.1 + 3.2 compatibility
     /// Dateiname: DitherStatisticsVM.cs
     /// </summary>
     [Export(typeof(IDockableVM))]
@@ -39,8 +40,11 @@ namespace DitherStatistics.Plugin {
             Title = "Dither Statistics";
             ContentId = "DitherStatistics_Panel";
 
-            // Configure LiveCharts for PixelShiftPoint
-            ConfigureLiveCharts();
+            // ✅ Load DataTemplates HIER im ViewModel (nicht im Plugin!)
+            LoadDataTemplates();
+
+            // ✅ NO MORE InitializePlots() call here!
+            // Plots are now created lazily via Properties when XAML accesses them
 
             // Initialize commands
             InitializeCommands();
@@ -63,53 +67,81 @@ namespace DitherStatistics.Plugin {
                 await ConnectToPHD2();
             });
 
-            Logger.Info("DitherStatisticsVM initialized successfully!");
+            Logger.Info("DitherStatisticsVM initialized successfully with ScottPlot 4.1 (Lazy Loading)!");
         }
 
         #region Properties - Chart Data
 
-        private ChartValues<double> settleTimeValues = new ChartValues<double>();
-        public ChartValues<double> SettleTimeValues {
-            get => settleTimeValues;
+        // ScottPlot data storage (Lists instead of ChartValues)
+        private readonly List<double> settleTimeValues = new List<double>();
+        private readonly List<PixelShiftPoint> pixelShiftValues = new List<PixelShiftPoint>();
+
+        // ✅ LAZY LOADING PROPERTY - Creates plot on first access (on UI thread via XAML binding)
+        private ScottPlot.WpfPlot pixelShiftPlot;
+        public ScottPlot.WpfPlot PixelShiftPlot {
+            get {
+                if (pixelShiftPlot == null) {
+                    // Create plot on first access (happens on UI thread via XAML binding)
+                    pixelShiftPlot = new ScottPlot.WpfPlot();
+                    pixelShiftPlot.Plot.Style(
+                        figureBackground: System.Drawing.Color.Transparent,
+                        dataBackground: System.Drawing.Color.Transparent
+                    );
+                    pixelShiftPlot.Plot.XLabel("X Pixels");
+                    pixelShiftPlot.Plot.YLabel("Y Pixels");
+                    pixelShiftPlot.Plot.XAxis.Color(System.Drawing.Color.White);
+                    pixelShiftPlot.Plot.YAxis.Color(System.Drawing.Color.White);
+                    pixelShiftPlot.Plot.XAxis.TickLabelStyle(color: System.Drawing.Color.White);
+                    pixelShiftPlot.Plot.YAxis.TickLabelStyle(color: System.Drawing.Color.White);
+
+                    // ✅ Attach tooltip event handlers
+                    AttachPixelShiftTooltip(pixelShiftPlot);
+
+                    Logger.Info("PixelShiftPlot created (lazy loading)");
+                }
+                return pixelShiftPlot;
+            }
             set {
-                settleTimeValues = value;
+                pixelShiftPlot = value;
                 RaisePropertyChanged();
             }
         }
 
-        private ChartValues<PixelShiftPoint> pixelShiftValues = new ChartValues<PixelShiftPoint>();
-        public ChartValues<PixelShiftPoint> PixelShiftValues {
-            get => pixelShiftValues;
+        // ✅ LAZY LOADING PROPERTY - Creates plot on first access (on UI thread via XAML binding)
+        private ScottPlot.WpfPlot settleTimePlot;
+        public ScottPlot.WpfPlot SettleTimePlot {
+            get {
+                if (settleTimePlot == null) {
+                    // Create plot on first access (happens on UI thread via XAML binding)
+                    settleTimePlot = new ScottPlot.WpfPlot();
+                    settleTimePlot.Plot.Style(
+                        figureBackground: System.Drawing.Color.Transparent,
+                        dataBackground: System.Drawing.Color.Transparent
+                    );
+                    settleTimePlot.Plot.XLabel("Dither #");
+                    settleTimePlot.Plot.YLabel("Settle Time (s)");
+                    settleTimePlot.Plot.XAxis.Color(System.Drawing.Color.White);
+                    settleTimePlot.Plot.YAxis.Color(System.Drawing.Color.White);
+                    settleTimePlot.Plot.XAxis.TickLabelStyle(color: System.Drawing.Color.White);
+                    settleTimePlot.Plot.YAxis.TickLabelStyle(color: System.Drawing.Color.White);
+
+                    // ✅ Attach tooltip event handlers
+                    AttachSettleTimeTooltip(settleTimePlot);
+
+                    Logger.Info("SettleTimePlot created (lazy loading)");
+                }
+                return settleTimePlot;
+            }
             set {
-                pixelShiftValues = value;
+                settleTimePlot = value;
                 RaisePropertyChanged();
             }
         }
 
-        public SeriesCollection SettleTimeSeriesCollection {
-            get {
-                if (_settleTimeSeriesCollection == null) {
-                    InitializeCharts();
-                }
-                return _settleTimeSeriesCollection;
-            }
-            set => _settleTimeSeriesCollection = value;
-        }
-        private SeriesCollection _settleTimeSeriesCollection;
-
-        public SeriesCollection PixelShiftSeriesCollection {
-            get {
-                if (_pixelShiftSeriesCollection == null) {
-                    InitializeCharts();
-                }
-                return _pixelShiftSeriesCollection;
-            }
-            set => _pixelShiftSeriesCollection = value;
-        }
-        private SeriesCollection _pixelShiftSeriesCollection;
-
+        // Formatter functions (kept for potential UI binding)
         public Func<double, string> XFormatter { get; set; } = value => value.ToString("F1");
         public Func<double, string> YFormatter { get; set; } = value => value.ToString("F1");
+        public Func<double, string> SettleTimeFormatter { get; set; } = value => value.ToString("F2");
 
         #endregion
 
@@ -208,6 +240,46 @@ namespace DitherStatistics.Plugin {
 
         #endregion
 
+        #region Properties - Tooltip Display
+
+        private string pixelShiftTooltipText = "";
+        public string PixelShiftTooltipText {
+            get => pixelShiftTooltipText;
+            set {
+                pixelShiftTooltipText = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        private bool pixelShiftTooltipVisible = false;
+        public bool PixelShiftTooltipVisible {
+            get => pixelShiftTooltipVisible;
+            set {
+                pixelShiftTooltipVisible = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        private string settleTimeTooltipText = "";
+        public string SettleTimeTooltipText {
+            get => settleTimeTooltipText;
+            set {
+                settleTimeTooltipText = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        private bool settleTimeTooltipVisible = false;
+        public bool SettleTimeTooltipVisible {
+            get => settleTimeTooltipVisible;
+            set {
+                settleTimeTooltipVisible = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        #endregion
+
         #region Properties - Quality Metrics
 
         private DitherQualityMetrics.QualityResult _qualityResult;
@@ -231,7 +303,7 @@ namespace DitherStatistics.Plugin {
             }
         }
 
-        public bool HasQualityData => QualityResult != null && PixelShiftValues.Count >= 4;
+        public bool HasQualityData => QualityResult != null && pixelShiftValues.Count >= 4;
 
         public string QualityRatingColor => QualityResult?.QualityRating switch {
             "Excellent" => "#4CAF50",
@@ -288,39 +360,31 @@ namespace DitherStatistics.Plugin {
 
         public ICommand ClearDataCommand { get; private set; }
         public ICommand ExportDitherEventsCsvCommand { get; private set; }
-        public ICommand ExportQualityMetricsCsvCommand { get; private set; }
         public ICommand RecalculateMetricsCommand { get; private set; }
         public ICommand ExportMetricsCommand { get; private set; }
 
         private void InitializeCommands() {
             ClearDataCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ClearData);
             ExportDitherEventsCsvCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ExportDitherEventsCsv);
-            ExportQualityMetricsCsvCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ExportQualityMetricsCsv);
-        }
-
-        private void InitializeQualityMetrics() {
             RecalculateMetricsCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(RecalculateQualityMetrics);
             ExportMetricsCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ExportQualityMetrics);
         }
 
         private void ClearData() {
+            settleTimeValues.Clear();
+            pixelShiftValues.Clear();
             ditherEvents.Clear();
-            SettleTimeValues.Clear();
-            PixelShiftValues.Clear();
-            currentDither = null;
-            QualityResult = null;
 
-            // Reset cumulative position
             cumulativeX = 0.0;
             cumulativeY = 0.0;
+            currentDither = null;
 
-            // Reset total drift
-            TotalDriftX = 0.0;
-            TotalDriftY = 0.0;
-
-            UpdatePixelShiftColors();
+            UpdateSettleTimeChart();
+            UpdatePixelShiftChart();
             UpdateStatistics();
-            Logger.Info("Dither statistics cleared");
+            UpdateQualityMetrics();
+
+            Logger.Info("All data cleared");
         }
 
         private void ExportDitherEventsCsv() {
@@ -345,7 +409,7 @@ namespace DitherStatistics.Plugin {
                 var csv = new System.Text.StringBuilder();
 
                 // Header
-                csv.AppendLine("Event Number,Timestamp Start,Timestamp End,Pixel Shift X,Pixel Shift Y,Cumulative X,Cumulative Y,Settle Time (s),Success");
+                csv.AppendLine("DitherNumber,StartTime,EndTime,PixelShiftX,PixelShiftY,CumulativeX,CumulativeY,SettleTime,Success");
 
                 // Data rows
                 for (int i = 0; i < ditherEvents.Count; i++) {
@@ -365,53 +429,6 @@ namespace DitherStatistics.Plugin {
                 Logger.Info($"Dither events exported to: {path}");
             } catch (Exception ex) {
                 Logger.Error($"Error exporting dither events: {ex.Message}");
-            }
-        }
-
-        private void ExportQualityMetricsCsv() {
-            if (QualityResult == null) {
-                Logger.Warning("No quality metrics to export");
-                return;
-            }
-
-            try {
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string filename = $"QualityMetrics_{timestamp}.csv";
-                string path = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                    "N.I.N.A",
-                    "DitherStatistics",
-                    filename
-                );
-
-                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
-
-                // Build CSV content
-                var csv = new System.Text.StringBuilder();
-
-                // Header
-                csv.AppendLine("Metric,Value,Unit,Rating");
-
-                // Primary Metrics
-                csv.AppendLine($"Total Dithers,{QualityResult.TotalDithers},count,");
-                csv.AppendLine($"Combined Quality Score,{QualityResult.CombinedScore:F4},0-1 scale,{QualityResult.QualityRating}");
-                csv.AppendLine($"Centered L2 Discrepancy,{QualityResult.CenteredL2Discrepancy:F6},lower is better,{GetCDRatingShort(QualityResult.CenteredL2Discrepancy)}");
-                csv.AppendLine($"Voronoi CV,{QualityResult.VoronoiCV:F6},lower is better,{GetVoronoiRatingShort(QualityResult.VoronoiCV)}");
-                csv.AppendLine($"Nearest Neighbor Index,{QualityResult.NearestNeighborIndex:F4},~1.0 = random,{GetNNIRatingShort(QualityResult.NearestNeighborIndex)}");
-
-                // Drizzle Metrics
-                csv.AppendLine($"Gap Fill Metric 1x Drizzle,{QualityResult.GapFillMetric_1x:F6},0-1 scale,{(QualityResult.GapFillMetric_1x >= 0.98 ? "Good" : "Poor")}");
-                csv.AppendLine($"Gap Fill Metric 2x Drizzle,{QualityResult.GapFillMetric_2x:F6},0-1 scale,{(QualityResult.GapFillMetric_2x >= 0.95 ? "Good" : "Poor")}");
-                csv.AppendLine($"Gap Fill Metric 3x Drizzle,{QualityResult.GapFillMetric_3x:F6},0-1 scale,{(QualityResult.GapFillMetric_3x >= 0.90 ? "Good" : "Poor")}");
-
-                // Recommendation
-                csv.AppendLine();
-                csv.AppendLine($"Recommendation,\"{QualityResult.Recommendation}\",,");
-
-                System.IO.File.WriteAllText(path, csv.ToString());
-                Logger.Info($"Quality metrics exported to: {path}");
-            } catch (Exception ex) {
-                Logger.Error($"Error exporting quality metrics: {ex.Message}");
             }
         }
 
@@ -503,94 +520,102 @@ namespace DitherStatistics.Plugin {
 
         private void OnPHD2SettleDone(object sender, PHD2SettleDoneEventArgs e) {
             try {
-                Logger.Info($"✅ DITHER END detected! Success={e.Success}, TotalFrames={e.TotalFrames}, DroppedFrames={e.DroppedFrames}");
+                if (currentDither == null) {
+                    Logger.Warning("⚠️ SettleDone received but no currentDither exists (race condition?)");
+                    return;
+                }
 
-                if (currentDither != null) {
-                    // Complete the dither event
-                    currentDither.EndTime = DateTime.Now;
-                    currentDither.Success = e.Success;
+                currentDither.EndTime = DateTime.Now;
+                currentDither.Success = e.Success;
+
+                if (currentDither.EndTime.HasValue) {
                     currentDither.SettleTime = (currentDither.EndTime.Value - currentDither.StartTime).TotalSeconds;
+                }
 
-                    // Update cumulative position (absolute chart position)
+                // Update cumulative position
+                if (currentDither.PixelShiftX.HasValue && currentDither.PixelShiftY.HasValue) {
                     cumulativeX += currentDither.PixelShiftX.Value;
                     cumulativeY += currentDither.PixelShiftY.Value;
-
-                    // Store cumulative position in event
                     currentDither.CumulativeX = cumulativeX;
                     currentDither.CumulativeY = cumulativeY;
-
-                    // Add to collection
-                    ditherEvents.Add(currentDither);
-
-                    // Update UI on dispatcher thread
-                    System.Windows.Application.Current?.Dispatcher.Invoke(() => {
-                        SettleTimeValues.Add(currentDither.SettleTime.Value);
-
-                        // Add point with cumulative position AND delta values
-                        PixelShiftValues.Add(new PixelShiftPoint(
-                            cumulativeX,                      // Absolute X position for chart
-                            cumulativeY,                      // Absolute Y position for chart
-                            currentDither.PixelShiftX.Value,  // Delta X for tooltip
-                            currentDither.PixelShiftY.Value   // Delta Y for tooltip
-                        ));
-
-                        UpdatePixelShiftColors();
-                        UpdateStatistics();
-                        UpdateQualityMetrics();
-                    });
-
-                    Logger.Info($"📊 Dither recorded: {currentDither.SettleTime:F2}s settle, shift: ({currentDither.PixelShiftX:F2}, {currentDither.PixelShiftY:F2}) px, cumulative: ({cumulativeX:F2}, {cumulativeY:F2})");
-
-                    currentDither = null;
-                } else {
-                    Logger.Warning("SettleDone received but no currentDither exists - plugin may have been started after dithering began");
                 }
+
+                // Add to events collection
+                ditherEvents.Add(currentDither);
+
+                Logger.Info($"✅ DITHER END - Success={e.Success}, SettleTime={currentDither.SettleTime:F2}s, " +
+                    $"TotalFrames={e.TotalFrames}, DroppedFrames={e.DroppedFrames}");
+
+                // Update charts and statistics (must be on UI thread)
+                Application.Current?.Dispatcher.Invoke(() => {
+                    if (currentDither.Success && currentDither.SettleTime.HasValue) {
+                        settleTimeValues.Add(currentDither.SettleTime.Value);
+                        UpdateSettleTimeChart();
+                    }
+
+                    if (currentDither.PixelShiftX.HasValue && currentDither.PixelShiftY.HasValue) {
+                        pixelShiftValues.Add(new PixelShiftPoint(
+                            cumulativeX,
+                            cumulativeY,
+                            currentDither.PixelShiftX.Value,
+                            currentDither.PixelShiftY.Value
+                        ));
+                        UpdatePixelShiftChart();
+                    }
+
+                    UpdateStatistics();
+                    UpdateQualityMetrics();
+                });
+
+                // Clear current dither
+                currentDither = null;
 
             } catch (Exception ex) {
                 Logger.Error($"Error handling SettleDone: {ex.Message}");
+                Logger.Error($"Stack trace: {ex.StackTrace}");
             }
         }
 
         #endregion
 
-        #region NINA Guider Events (Optional)
+        #region NINA Guider Events (Optional Monitoring)
 
         private void SubscribeToGuiderEvents() {
-            try {
-                if (guiderMediator != null) {
-                    guiderMediator.RegisterConsumer(this);
-                    Logger.Info("Registered as NINA guider consumer");
-                }
-            } catch (Exception ex) {
-                Logger.Error($"Failed to subscribe to NINA guider events: {ex.Message}");
+            if (guiderMediator != null) {
+                guiderMediator.RegisterConsumer(this);
+                Logger.Info("Subscribed to NINA guider events");
             }
         }
 
-        public void UpdateDeviceInfo(GuiderInfo guiderInfo) {
-            // Optional: Monitor guider connection status
-            // We're primarily using PHD2 direct connection now
+        public void UpdateDeviceInfo(GuiderInfo deviceInfo) {
+            // Optional: Monitor NINA guider connection status
+            Logger.Debug($"Guider info updated: {deviceInfo?.Name ?? "None"}");
         }
 
         #endregion
 
-        #region Quality Metrics Methods
+        #region Quality Metrics
+
+        private void InitializeQualityMetrics() {
+            RecalculateMetricsCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(RecalculateQualityMetrics);
+            ExportMetricsCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ExportQualityMetrics);
+        }
 
         private void UpdateQualityMetrics() {
-            if (PixelShiftValues.Count < 4) {
+            if (pixelShiftValues.Count < 4) {
                 QualityResult = null;
                 return;
             }
 
             try {
                 // Extract cumulative positions (X, Y) from PixelShiftValues
-                var positions = PixelShiftValues
-                    .Select(p => (p.X, p.Y))  // Use cumulative positions
+                var positions = pixelShiftValues
+                    .Select(p => (p.X, p.Y))
                     .ToList();
 
-                // Calculate metrics with default pixfrac 0.6
-                QualityResult = DitherQualityMetrics.CalculateQualityMetrics(positions, pixfrac: 0.6);
+                QualityResult = DitherQualityMetrics.CalculateQualityMetrics(positions);
+                Logger.Info($"Quality metrics updated: Score={QualityResult.CombinedScore:F4}, Rating={QualityResult.QualityRating}");
 
-                Logger.Info($"Quality metrics updated: Score={QualityResult.CombinedScore:F3}, Rating={QualityResult.QualityRating}");
             } catch (Exception ex) {
                 Logger.Error($"Error calculating quality metrics: {ex.Message}");
                 QualityResult = null;
@@ -598,156 +623,280 @@ namespace DitherStatistics.Plugin {
         }
 
         private string GetCDRatingShort(double cd) {
-            if (cd < 0.02) return "Excellent";
-            if (cd < 0.05) return "Good";
-            if (cd < 0.08) return "OK";
-            if (cd < 0.10) return "Fair";
-            return "Poor";
+            if (cd < 0.15) return "★★★";
+            if (cd < 0.25) return "★★";
+            if (cd < 0.35) return "★";
+            return "✗";
         }
 
         private string GetVoronoiRatingShort(double cv) {
-            if (cv < 0.2) return "Excellent";
-            if (cv < 0.3) return "Good";
-            if (cv < 0.5) return "OK";
-            return "Poor";
+            if (cv < 0.25) return "★★★";
+            if (cv < 0.35) return "★★";
+            if (cv < 0.50) return "★";
+            return "✗";
         }
 
         private string GetNNIRatingShort(double nni) {
-            if (nni > 1.5) return "Excellent";
-            if (nni > 1.2) return "Good";
-            if (nni > 0.9) return "Acceptable";
-            if (nni > 0.7) return "Fair";
-            return "Poor";
+            if (Math.Abs(nni - 1.0) < 0.15) return "★★★";
+            if (Math.Abs(nni - 1.0) < 0.30) return "★★";
+            if (Math.Abs(nni - 1.0) < 0.50) return "★";
+            return "✗";
         }
 
         #endregion
 
-        #region Chart Methods
+        #region ScottPlot Chart Management
 
-        private void ConfigureLiveCharts() {
-            var mapper = Mappers.Xy<PixelShiftPoint>()
-                .X(point => point.X)
-                .Y(point => point.Y);
+        // ✅ InitializePlots() removed - no longer needed with lazy loading properties
+        // Plots are created automatically when XAML accesses the properties (on UI thread)
 
-            Charting.For<PixelShiftPoint>(mapper);
-        }
+        private void UpdatePixelShiftChart() {
+            try {
+                if (PixelShiftPlot == null) return;
 
-        private void InitializeCharts() {
-            if (_settleTimeSeriesCollection != null && _pixelShiftSeriesCollection != null)
-                return;
+                // Clear plot
+                PixelShiftPlot.Plot.Clear();
 
-            // Settle Time Chart - OPTIMIZED TOOLTIP (nur Sekundenwert)
-            _settleTimeSeriesCollection = new SeriesCollection
-            {
-                new LineSeries
-                {
-                    Title = "Settle Time",
-                    Values = SettleTimeValues,
-                    PointGeometry = DefaultGeometries.Circle,
-                    PointGeometrySize = 8,
-                    Fill = System.Windows.Media.Brushes.Transparent,
-                    Stroke = System.Windows.Media.Brushes.DodgerBlue,
-                    StrokeThickness = 2,
-                    LineSmoothness = 0,
-                    LabelPoint = point => $"{point.Y:F2}s"
-                },
-                new LineSeries
-                {
-                    Title = "Average",
-                    Values = new ChartValues<double>(),
-                    PointGeometry = null,
-                    Fill = System.Windows.Media.Brushes.Transparent,
-                    Stroke = System.Windows.Media.Brushes.Red,
-                    StrokeThickness = 2,
-                    StrokeDashArray = new System.Windows.Media.DoubleCollection { 5, 5 },
-                    LineSmoothness = 0
-                },
-                new LineSeries
-                {
-                    Title = "Avg - StdDev",
-                    Values = new ChartValues<double>(),
-                    PointGeometry = null,
-                    Fill = System.Windows.Media.Brushes.Transparent,
-                    Stroke = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(120, 255, 0, 0)),
-                    StrokeThickness = 2,
-                    StrokeDashArray = new System.Windows.Media.DoubleCollection { 2, 2 },
-                    LineSmoothness = 0
-                },
-                new LineSeries
-                {
-                    Title = "Avg + StdDev",
-                    Values = new ChartValues<double>(),
-                    PointGeometry = null,
-                    Fill = System.Windows.Media.Brushes.Transparent,
-                    Stroke = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(120, 255, 0, 0)),
-                    StrokeThickness = 2,
-                    StrokeDashArray = new System.Windows.Media.DoubleCollection { 2, 2 },
-                    LineSmoothness = 0
+                if (pixelShiftValues.Count == 0) {
+                    PixelShiftPlot.Render();
+                    return;
                 }
-            };
 
-            // Pixel Shift Chart
-            _pixelShiftSeriesCollection = new SeriesCollection
-            {
-                new LineSeries
-                {
-                    Title = "Connections",
-                    Values = PixelShiftValues,
-                    PointGeometry = null,
-                    Fill = System.Windows.Media.Brushes.Transparent,
-                    Stroke = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(80, 100, 149, 237)),
-                    StrokeThickness = 1,
-                    LineSmoothness = 0
+                // Extract data
+                double[] xData = pixelShiftValues.Select(p => p.X).ToArray();
+                double[] yData = pixelShiftValues.Select(p => p.Y).ToArray();
+
+                // Add connection line (thin, semi-transparent)
+                if (pixelShiftValues.Count > 1) {
+                    var connectionLine = PixelShiftPlot.Plot.AddScatter(xData, yData);
+                    connectionLine.Color = System.Drawing.Color.FromArgb(80, 100, 149, 237);
+                    connectionLine.LineWidth = 1;
+                    connectionLine.MarkerSize = 0;
+                    connectionLine.Label = "Connections";
                 }
-            };
-        }
 
-        private void UpdatePixelShiftColors() {
-            if (_pixelShiftSeriesCollection == null)
-                return;
+                // Add gradient-colored scatter points
+                for (int i = 0; i < pixelShiftValues.Count; i++) {
+                    double ratio = pixelShiftValues.Count > 1 ? (double)i / (pixelShiftValues.Count - 1) : 1.0;
+                    byte red = (byte)(60 + (200 - 60) * ratio);
+                    var pointColor = System.Drawing.Color.FromArgb(255, red, 0, 0);
 
-            int count = PixelShiftValues.Count;
-            if (count == 0)
-                return;
+                    var scatter = PixelShiftPlot.Plot.AddScatter(
+                        new double[] { xData[i] },
+                        new double[] { yData[i] }
+                    );
+                    scatter.Color = pointColor;
+                    scatter.MarkerSize = 6;
+                    scatter.MarkerShape = MarkerShape.filledCircle;
+                    scatter.LineWidth = 0;
+                }
 
-            // Remove old point series (keep connection line at index 0)
-            while (_pixelShiftSeriesCollection.Count > 1) {
-                _pixelShiftSeriesCollection.RemoveAt(1);
+                // Highlight last point in lime green
+                if (pixelShiftValues.Count > 0) {
+                    int lastIndex = pixelShiftValues.Count - 1;
+                    var lastPoint = PixelShiftPlot.Plot.AddScatter(
+                        new double[] { xData[lastIndex] },
+                        new double[] { yData[lastIndex] }
+                    );
+                    lastPoint.Color = System.Drawing.Color.Lime;
+                    lastPoint.MarkerSize = 8;
+                    lastPoint.MarkerShape = MarkerShape.filledCircle;
+                    lastPoint.LineWidth = 0;
+                    lastPoint.Label = "Latest";
+                }
+
+                // Add crosshair at origin
+                PixelShiftPlot.Plot.AddVerticalLine(0, System.Drawing.Color.White, 2);
+                PixelShiftPlot.Plot.AddHorizontalLine(0, System.Drawing.Color.White, 2);
+
+                // Auto-scale and refresh
+                PixelShiftPlot.Plot.AxisAuto();
+                PixelShiftPlot.Render();
+
+            } catch (Exception ex) {
+                Logger.Error($"Error updating pixel shift chart: {ex.Message}");
             }
+        }
 
-            // Add scatter series for each point with gradient color
-            // TOOLTIP: Show DELTA values (ΔX, ΔY), not cumulative position
-            for (int i = 0; i < count; i++) {
-                double ratio = count > 1 ? (double)i / (count - 1) : 1.0;
-                byte red = (byte)(60 + (200 - 60) * ratio);
+        private void UpdateSettleTimeChart() {
+            try {
+                if (SettleTimePlot == null) return;
 
-                var pointColor = System.Windows.Media.Color.FromRgb(red, 0, 0);
+                // Clear plot
+                SettleTimePlot.Plot.Clear();
 
-                var point = PixelShiftValues[i];
+                if (settleTimeValues.Count == 0) {
+                    SettleTimePlot.Render();
+                    return;
+                }
 
-                var scatterSeries = new ScatterSeries {
-                    Values = new ChartValues<PixelShiftPoint> { point },
-                    PointGeometry = DefaultGeometries.Circle,
-                    MinPointShapeDiameter = 6,
-                    MaxPointShapeDiameter = 6,
-                    Fill = new System.Windows.Media.SolidColorBrush(pointColor),
-                    Stroke = System.Windows.Media.Brushes.Transparent,
-                    // TOOLTIP shows DELTA, not cumulative position!
-                    // Cast ChartPoint.Instance to PixelShiftPoint to access DeltaX/DeltaY
-                    LabelPoint = chartPoint => {
-                        var pixelPoint = chartPoint.Instance as PixelShiftPoint;
-                        if (pixelPoint != null) {
-                            return $"ΔX: {pixelPoint.DeltaX:F2}  ΔY: {pixelPoint.DeltaY:F2}";
-                        }
-                        return "";
+                // X-axis: Dither numbers (1, 2, 3, ...)
+                double[] xData = Enumerable.Range(1, settleTimeValues.Count).Select(i => (double)i).ToArray();
+                double[] yData = settleTimeValues.ToArray();
+
+                // Add main settle time line
+                var settleTimeLine = SettleTimePlot.Plot.AddScatter(xData, yData);
+                settleTimeLine.Color = System.Drawing.Color.DodgerBlue;
+                settleTimeLine.LineWidth = 2;
+                settleTimeLine.MarkerSize = 8;
+                settleTimeLine.MarkerShape = MarkerShape.filledCircle;
+                settleTimeLine.Label = "Settle Time";
+
+                // Add average line if we have statistics
+                if (AverageSettleTime > 0 && settleTimeValues.Count > 0) {
+                    double[] avgData = Enumerable.Repeat(AverageSettleTime, settleTimeValues.Count).ToArray();
+                    var avgLine = SettleTimePlot.Plot.AddScatter(xData, avgData);
+                    avgLine.Color = System.Drawing.Color.Red;
+                    avgLine.LineWidth = 2;
+                    avgLine.MarkerSize = 0;
+                    avgLine.LineStyle = LineStyle.Dash;
+                    avgLine.Label = "Average";
+
+                    // Add Avg ± StdDev lines
+                    if (StdDevSettleTime > 0) {
+                        double[] lowerData = Enumerable.Repeat(Math.Max(0, AverageSettleTime - StdDevSettleTime), settleTimeValues.Count).ToArray();
+                        double[] upperData = Enumerable.Repeat(AverageSettleTime + StdDevSettleTime, settleTimeValues.Count).ToArray();
+
+                        var lowerLine = SettleTimePlot.Plot.AddScatter(xData, lowerData);
+                        lowerLine.Color = System.Drawing.Color.FromArgb(120, 255, 0, 0);
+                        lowerLine.LineWidth = 2;
+                        lowerLine.MarkerSize = 0;
+                        lowerLine.LineStyle = LineStyle.Dot;
+                        lowerLine.Label = "Avg - StdDev";
+
+                        var upperLine = SettleTimePlot.Plot.AddScatter(xData, upperData);
+                        upperLine.Color = System.Drawing.Color.FromArgb(120, 255, 0, 0);
+                        upperLine.LineWidth = 2;
+                        upperLine.MarkerSize = 0;
+                        upperLine.LineStyle = LineStyle.Dot;
+                        upperLine.Label = "Avg + StdDev";
                     }
-                };
+                }
 
-                _pixelShiftSeriesCollection.Add(scatterSeries);
+                // Disable built-in legend (we'll show it below the chart in XAML)
+                SettleTimePlot.Plot.Legend(enable: false);
+
+                // Auto-scale (will respect 0 as minimum) and refresh
+                SettleTimePlot.Plot.AxisAuto();
+                SettleTimePlot.Plot.SetAxisLimits(yMin: 0);
+                SettleTimePlot.Render();
+
+            } catch (Exception ex) {
+                Logger.Error($"Error updating settle time chart: {ex.Message}");
             }
-
-            RaisePropertyChanged(nameof(PixelShiftSeriesCollection));
         }
+
+        /// <summary>
+        /// Attach tooltip functionality to Pixel Shift Plot
+        /// Tooltip shows: "ΔX: 2.71 px  ΔY: -3.29 px"
+        /// </summary>
+        private void AttachPixelShiftTooltip(ScottPlot.WpfPlot plot) {
+            plot.MouseMove += (s, e) => {
+                try {
+                    if (pixelShiftValues.Count == 0) {
+                        PixelShiftTooltipVisible = false;
+                        return;
+                    }
+
+                    // Get mouse coordinates in plot space
+                    var mouseCoords = plot.GetMouseCoordinates();
+
+                    // Find nearest point
+                    int nearestIndex = -1;
+                    double minDistance = double.MaxValue;
+
+                    for (int i = 0; i < pixelShiftValues.Count; i++) {
+                        var point = pixelShiftValues[i];
+                        double distance = Math.Sqrt(
+                            Math.Pow(point.X - mouseCoords.x, 2) +
+                            Math.Pow(point.Y - mouseCoords.y, 2)
+                        );
+
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            nearestIndex = i;
+                        }
+                    }
+
+                    // Show tooltip if within reasonable distance
+                    if (nearestIndex >= 0) {
+                        var axisLimits = plot.Plot.GetAxisLimits();
+                        double xRange = axisLimits.XMax - axisLimits.XMin;
+                        double yRange = axisLimits.YMax - axisLimits.YMin;
+                        double threshold = Math.Sqrt(xRange * xRange + yRange * yRange) * 0.05; // 5% of diagonal
+
+                        if (minDistance < threshold) {
+                            var point = pixelShiftValues[nearestIndex];
+                            PixelShiftTooltipText = $"ΔX: {point.DeltaX:F2} px  ΔY: {point.DeltaY:F2} px";
+                            PixelShiftTooltipVisible = true;
+                        } else {
+                            PixelShiftTooltipVisible = false;
+                        }
+                    } else {
+                        PixelShiftTooltipVisible = false;
+                    }
+                } catch (Exception ex) {
+                    Logger.Error($"Error in PixelShift tooltip: {ex.Message}");
+                }
+            };
+
+            plot.MouseLeave += (s, e) => {
+                PixelShiftTooltipVisible = false;
+            };
+        }
+
+        /// <summary>
+        /// Attach tooltip functionality to Settle Time Plot
+        /// Tooltip shows: "Dither #5: 12.34s"
+        /// </summary>
+        private void AttachSettleTimeTooltip(ScottPlot.WpfPlot plot) {
+            plot.MouseMove += (s, e) => {
+                try {
+                    if (settleTimeValues.Count == 0) {
+                        SettleTimeTooltipVisible = false;
+                        return;
+                    }
+
+                    // Get mouse coordinates in plot space
+                    var mouseCoords = plot.GetMouseCoordinates();
+
+                    // Find nearest point (X coordinate is dither number: 1, 2, 3, ...)
+                    int ditherNumber = (int)Math.Round(mouseCoords.x);
+                    int index = ditherNumber - 1; // Convert to 0-based index
+
+                    if (index >= 0 && index < settleTimeValues.Count) {
+                        double settleTime = settleTimeValues[index];
+
+                        // Calculate distance to check if mouse is close enough
+                        double yValue = settleTime;
+                        double distance = Math.Abs(mouseCoords.y - yValue);
+
+                        var axisLimits = plot.Plot.GetAxisLimits();
+                        double yRange = axisLimits.YMax - axisLimits.YMin;
+                        double threshold = yRange * 0.1; // 10% of Y range
+
+                        if (distance < threshold) {
+                            SettleTimeTooltipText = $"Dither #{ditherNumber}: {settleTime:F2}s";
+                            SettleTimeTooltipVisible = true;
+                        } else {
+                            SettleTimeTooltipVisible = false;
+                        }
+                    } else {
+                        SettleTimeTooltipVisible = false;
+                    }
+                } catch (Exception ex) {
+                    Logger.Error($"Error in SettleTime tooltip: {ex.Message}");
+                }
+            };
+
+            plot.MouseLeave += (s, e) => {
+                SettleTimeTooltipVisible = false;
+            };
+        }
+
+        #endregion
+
+        #region Statistics
 
         private void UpdateStatistics() {
             var successfulEvents = ditherEvents.Where(d => d.Success && d.SettleTime.HasValue).ToList();
@@ -765,26 +914,8 @@ namespace DitherStatistics.Plugin {
                 MaxSettleTime = settleTimes.Max();
                 StdDevSettleTime = DitherStatistics.CalculateStdDev(settleTimes);
 
-                // Update chart lines
-                if (_settleTimeSeriesCollection != null && _settleTimeSeriesCollection.Count > 3) {
-                    var avgLine = _settleTimeSeriesCollection[1].Values as ChartValues<double>;
-                    avgLine?.Clear();
-                    for (int i = 0; i < SettleTimeValues.Count; i++) {
-                        avgLine?.Add(AverageSettleTime);
-                    }
-
-                    var lowerLine = _settleTimeSeriesCollection[2].Values as ChartValues<double>;
-                    lowerLine?.Clear();
-                    for (int i = 0; i < SettleTimeValues.Count; i++) {
-                        lowerLine?.Add(Math.Max(0, AverageSettleTime - StdDevSettleTime));
-                    }
-
-                    var upperLine = _settleTimeSeriesCollection[3].Values as ChartValues<double>;
-                    upperLine?.Clear();
-                    for (int i = 0; i < SettleTimeValues.Count; i++) {
-                        upperLine?.Add(AverageSettleTime + StdDevSettleTime);
-                    }
-                }
+                // Update settle time chart with new average/stddev lines
+                UpdateSettleTimeChart();
             } else {
                 AverageSettleTime = 0;
                 MedianSettleTime = 0;
@@ -794,9 +925,9 @@ namespace DitherStatistics.Plugin {
             }
 
             // Calculate Total Drift as Spannweite (Max - Min) über alle Punkte
-            if (PixelShiftValues.Count > 0) {
-                var xValues = PixelShiftValues.Select(p => p.X).ToList();
-                var yValues = PixelShiftValues.Select(p => p.Y).ToList();
+            if (pixelShiftValues.Count > 0) {
+                var xValues = pixelShiftValues.Select(p => p.X).ToList();
+                var yValues = pixelShiftValues.Select(p => p.Y).ToList();
 
                 TotalDriftX = xValues.Max() - xValues.Min();
                 TotalDriftY = yValues.Max() - yValues.Min();
@@ -906,9 +1037,28 @@ namespace DitherStatistics.Plugin {
                     guiderMediator.RemoveConsumer(this);
                 }
 
+                PixelShiftPlot?.Plot?.Clear();
+                SettleTimePlot?.Plot?.Clear();
+
                 Logger.Info("DitherStatisticsVM disposed");
             } catch (Exception ex) {
                 Logger.Error($"Error disposing: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Load DataTemplates for UI rendering
+        /// Called in ViewModel constructor (not Plugin) to ensure Assembly is fully loaded
+        /// </summary>
+        private void LoadDataTemplates() {
+            try {
+                var resourceDict = new ResourceDictionary {
+                    Source = new Uri("pack://application:,,,/ThierryTschanz.NINA.Ditherstatistics;component/DitherStatisticsDataTemplates.xaml", UriKind.Absolute)
+                };
+                Application.Current?.Resources.MergedDictionaries.Add(resourceDict);
+                Logger.Info("DitherStatistics DataTemplates loaded successfully");
+            } catch (Exception ex) {
+                Logger.Error($"Failed to load DataTemplates: {ex.Message}");
             }
         }
 

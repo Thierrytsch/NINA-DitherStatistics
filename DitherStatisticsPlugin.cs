@@ -13,62 +13,15 @@ using NINA.Profile.Interfaces;
 namespace DitherStatistics.Plugin {
     /// <summary>
     /// Main plugin class - Entry point for the NINA plugin system
+    /// Migrated from LiveCharts to ScottPlot
     /// Dateiname: DitherStatisticsPlugin.cs
     /// </summary>
     [Export(typeof(IPluginManifest))]
     public class DitherStatisticsPlugin : PluginBase {
         [ImportingConstructor]
         public DitherStatisticsPlugin(IProfileService profileService) {
-            // CRITICAL: Register assembly resolver BEFORE loading DataTemplates
-            RegisterAssemblyResolver();
-
-            // Load DataTemplates for UI rendering
-            LoadDataTemplates();
-        }
-
-        private void RegisterAssemblyResolver() {
-            try {
-                AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
-                Logger.Info("Assembly resolver registered for DitherStatistics plugin");
-            } catch (Exception ex) {
-                Logger.Error($"Failed to register assembly resolver: {ex.Message}");
-            }
-        }
-
-        private Assembly OnAssemblyResolve(object sender, ResolveEventArgs args) {
-            var assemblyName = new AssemblyName(args.Name);
-
-            // Only handle LiveCharts assemblies
-            if (!assemblyName.Name.StartsWith("LiveCharts")) {
-                return null;
-            }
-
-            try {
-                // Get plugin directory
-                var pluginDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-                var assemblyPath = Path.Combine(pluginDir, assemblyName.Name + ".dll");
-
-                if (File.Exists(assemblyPath)) {
-                    Logger.Info($"Loading assembly from plugin directory: {assemblyPath}");
-                    return Assembly.LoadFrom(assemblyPath);
-                }
-            } catch (Exception ex) {
-                Logger.Error($"Failed to resolve assembly {assemblyName.Name}: {ex.Message}");
-            }
-
-            return null;
-        }
-
-        private void LoadDataTemplates() {
-            try {
-                var resourceDict = new ResourceDictionary {
-                    Source = new Uri("pack://application:,,,/ThierryTschanz.NINA.Ditherstatistics;component/DitherStatisticsDataTemplates.xaml", UriKind.Absolute)
-                };
-                Application.Current?.Resources.MergedDictionaries.Add(resourceDict);
-                Logger.Info("DitherStatistics DataTemplates loaded successfully");
-            } catch (Exception ex) {
-                Logger.Error($"Failed to load DataTemplates: {ex.Message}");
-            }
+            // DataTemplates werden jetzt im ViewModel-Konstruktor geladen
+            // Das ist nötig, weil beim Plugin-Load die Assembly noch nicht vollständig initialisiert ist
         }
     }
 

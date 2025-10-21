@@ -1,9 +1,9 @@
-﻿<UserControl x:Class="DitherStatistics.Plugin.DitherStatisticsView"
+﻿<?xml version="1.0" encoding="utf-8"?>
+<UserControl x:Class="DitherStatistics.Plugin.DitherStatisticsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
-             xmlns:lvc="clr-namespace:LiveCharts.Wpf;assembly=LiveCharts.Wpf"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              mc:Ignorable="d" 
              d:DesignHeight="700" d:DesignWidth="400">
 
@@ -40,7 +40,7 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="10">
 
-                <!-- Pixel Shift Chart -->
+                <!-- Pixel Shift Chart (ScottPlot) with Tooltip Overlay -->
                 <Border Background="{DynamicResource SecondaryBackgroundBrush}" 
                        BorderBrush="{DynamicResource BorderBrush}" 
                        BorderThickness="1" 
@@ -53,56 +53,31 @@
                                   Foreground="White"
                                   Margin="0,0,0,10"/>
 
-                        <lvc:CartesianChart Height="300" 
-                                          Series="{Binding PixelShiftSeriesCollection}"
-                                          LegendLocation="None"
-                                          Background="Transparent"
-                                          Hoverable="True">
-                            <lvc:CartesianChart.DataTooltip>
-                                <lvc:DefaultTooltip Background="{DynamicResource SecondaryBackgroundBrush}" 
-                                                   Foreground="White"
-                                                   BorderBrush="#00A0FF"
-                                                   BorderThickness="2"
-                                                   FontSize="13"
-                                                   FontWeight="SemiBold"
-                                                   Padding="8,6"/>
-                            </lvc:CartesianChart.DataTooltip>
-                            <lvc:CartesianChart.AxisX>
-                                <lvc:Axis Title="X Pixels" 
-                                        Foreground="White"
-                                        LabelFormatter="{Binding XFormatter}">
-                                    <lvc:Axis.Separator>
-                                        <lvc:Separator Step="1" StrokeThickness="1" Stroke="{DynamicResource BorderBrush}"/>
-                                    </lvc:Axis.Separator>
-                                    <lvc:Axis.Sections>
-                                        <lvc:AxisSection Value="0" 
-                                                        StrokeThickness="3" 
-                                                        Stroke="White"/>
-                                    </lvc:Axis.Sections>
-                                </lvc:Axis>
-                            </lvc:CartesianChart.AxisX>
-                            <lvc:CartesianChart.AxisY>
-                                <lvc:Axis Title="Y Pixels" 
-                                        Foreground="White"
-                                        LabelFormatter="{Binding YFormatter}">
-                                    <lvc:Axis.Separator>
-                                        <lvc:Separator Step="1" StrokeThickness="1" Stroke="{DynamicResource BorderBrush}"/>
-                                    </lvc:Axis.Separator>
-                                    <lvc:Axis.Sections>
-                                        <lvc:AxisSection Value="0" 
-                                                        StrokeThickness="3" 
-                                                        Stroke="White"/>
-                                    </lvc:Axis.Sections>
-                                </lvc:Axis>
-                            </lvc:CartesianChart.AxisY>
-                            <lvc:CartesianChart.ChartLegend>
-                                <lvc:DefaultLegend Visibility="Collapsed"/>
-                            </lvc:CartesianChart.ChartLegend>
-                        </lvc:CartesianChart>
+                        <!-- Grid for Chart + Tooltip Overlay -->
+                        <Grid Height="300">
+                            <!-- ScottPlot WpfPlot Control -->
+                            <ContentControl Content="{Binding PixelShiftPlot}"/>
+
+                            <!-- Tooltip Overlay -->
+                            <Border Background="#DD2D2D30" 
+                                   BorderBrush="#FF00A0FF" 
+                                   BorderThickness="2"
+                                   CornerRadius="3"
+                                   Padding="8"
+                                   HorizontalAlignment="Left"
+                                   VerticalAlignment="Top"
+                                   Margin="10"
+                                   Visibility="{Binding PixelShiftTooltipVisible, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="{Binding PixelShiftTooltipText}"
+                                          Foreground="White"
+                                          FontSize="13"
+                                          FontWeight="SemiBold"/>
+                            </Border>
+                        </Grid>
                     </StackPanel>
                 </Border>
 
-                <!-- Settle Time Chart -->
+                <!-- Settle Time Chart (ScottPlot) with Tooltip Overlay -->
                 <Border Background="{DynamicResource SecondaryBackgroundBrush}" 
                        BorderBrush="{DynamicResource BorderBrush}" 
                        BorderThickness="1" 
@@ -115,40 +90,93 @@
                                   Foreground="White"
                                   Margin="0,0,0,10"/>
 
-                        <lvc:CartesianChart Height="150" 
-                                          Series="{Binding SettleTimeSeriesCollection}"
-                                          LegendLocation="Bottom"
-                                          Background="Transparent"
-                                          Hoverable="True">
-                            <lvc:CartesianChart.DataTooltip>
-                                <lvc:DefaultTooltip Background="{DynamicResource SecondaryBackgroundBrush}" 
-                                                   Foreground="White"
-                                                   BorderBrush="#1E90FF"
-                                                   BorderThickness="2"
-                                                   FontSize="13"
-                                                   FontWeight="SemiBold"
-                                                   Padding="8,6"/>
-                            </lvc:CartesianChart.DataTooltip>
-                            <lvc:CartesianChart.AxisX>
-                                <lvc:Axis Title="Dither #" 
-                                        Foreground="White"
-                                        MinValue="0">
-                                    <lvc:Axis.Separator>
-                                        <lvc:Separator Visibility="Hidden"/>
-                                    </lvc:Axis.Separator>
-                                </lvc:Axis>
-                            </lvc:CartesianChart.AxisX>
-                            <lvc:CartesianChart.AxisY>
-                                <lvc:Axis Title="Settle Time (s)" 
-                                        Foreground="White"
-                                        LabelFormatter="{Binding SettleTimeFormatter}"
-                                        MinValue="0">
-                                    <lvc:Axis.Separator>
-                                        <lvc:Separator StrokeThickness="1" Stroke="{DynamicResource BorderBrush}"/>
-                                    </lvc:Axis.Separator>
-                                </lvc:Axis>
-                            </lvc:CartesianChart.AxisY>
-                        </lvc:CartesianChart>
+                        <!-- Grid for Chart + Tooltip Overlay -->
+                        <Grid Height="150">
+                            <!-- ScottPlot WpfPlot Control -->
+                            <ContentControl Content="{Binding SettleTimePlot}"/>
+
+                            <!-- Tooltip Overlay -->
+                            <Border Background="#DD2D2D30" 
+                                   BorderBrush="#FF1E90FF" 
+                                   BorderThickness="2"
+                                   CornerRadius="3"
+                                   Padding="8"
+                                   HorizontalAlignment="Left"
+                                   VerticalAlignment="Top"
+                                   Margin="10"
+                                   Visibility="{Binding SettleTimeTooltipVisible, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="{Binding SettleTimeTooltipText}"
+                                          Foreground="White"
+                                          FontSize="13"
+                                          FontWeight="SemiBold"/>
+                            </Border>
+                        </Grid>
+
+                        <!-- Legend unter dem Chart -->
+                        <StackPanel Orientation="Horizontal" 
+                                   HorizontalAlignment="Center" 
+                                   Margin="0,8,0,0">
+                            <!-- Settle Time -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,15,0">
+                                <Ellipse Width="10" Height="10" 
+                                        Fill="DodgerBlue" 
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,4,0"/>
+                                <TextBlock Text="Settle Time" 
+                                          FontSize="10" 
+                                          Foreground="#B0B0B0"
+                                          VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <!-- Average -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,15,0">
+                                <Rectangle Width="14" Height="2" 
+                                          Fill="Red" 
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,4,0">
+                                    <Rectangle.OpacityMask>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                            <GradientStop Color="Red" Offset="0.0"/>
+                                            <GradientStop Color="Transparent" Offset="0.3"/>
+                                            <GradientStop Color="Red" Offset="0.4"/>
+                                            <GradientStop Color="Transparent" Offset="0.6"/>
+                                            <GradientStop Color="Red" Offset="0.7"/>
+                                            <GradientStop Color="Transparent" Offset="1.0"/>
+                                        </LinearGradientBrush>
+                                    </Rectangle.OpacityMask>
+                                </Rectangle>
+                                <TextBlock Text="Average" 
+                                          FontSize="10" 
+                                          Foreground="#B0B0B0"
+                                          VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <!-- Avg ± StdDev -->
+                            <StackPanel Orientation="Horizontal">
+                                <Rectangle Width="14" Height="2" 
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,4,0">
+                                    <Rectangle.Fill>
+                                        <SolidColorBrush Color="Red" Opacity="0.5"/>
+                                    </Rectangle.Fill>
+                                    <Rectangle.OpacityMask>
+                                        <DrawingBrush TileMode="Tile" Viewport="0,0,3,2" ViewportUnits="Absolute">
+                                            <DrawingBrush.Drawing>
+                                                <GeometryDrawing Brush="Red">
+                                                    <GeometryDrawing.Geometry>
+                                                        <RectangleGeometry Rect="0,0,1,2"/>
+                                                    </GeometryDrawing.Geometry>
+                                                </GeometryDrawing>
+                                            </DrawingBrush.Drawing>
+                                        </DrawingBrush>
+                                    </Rectangle.OpacityMask>
+                                </Rectangle>
+                                <TextBlock Text="Avg ± StdDev" 
+                                          FontSize="10" 
+                                          Foreground="#B0B0B0"
+                                          VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
@@ -224,7 +252,7 @@
                        BorderThickness="1" 
                        Padding="15" 
                        Margin="0,0,0,10"
-                       Visibility="{Binding HasQualityData, Converter={StaticResource BoolToVis}}">
+                       Visibility="{Binding HasQualityData, Converter={StaticResource BoolToVis}, Mode=OneWay}">
                     <StackPanel>
                         <!-- Header with Overall Rating und EXPERIMENTAL Badge -->
                         <Grid Margin="0,0,0,15">
@@ -260,15 +288,15 @@
                                     CornerRadius="10"
                                     Padding="10,4">
                                 <Border.Background>
-                                    <SolidColorBrush Color="{Binding QualityRatingColor}"/>
+                                    <SolidColorBrush Color="{Binding QualityRatingColor, Mode=OneWay}"/>
                                 </Border.Background>
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="{Binding QualityResult.QualityRating}"
+                                    <TextBlock Text="{Binding QualityResult.QualityRating, Mode=OneWay}"
                                               FontWeight="Bold"
                                               FontSize="12"
                                               Foreground="White"
                                               Margin="0,0,6,0"/>
-                                    <TextBlock Text="{Binding CombinedScoreValue}"
+                                    <TextBlock Text="{Binding CombinedScoreValue, Mode=OneWay}"
                                               FontSize="12"
                                               Foreground="White"
                                               Opacity="0.9"/>
@@ -291,23 +319,23 @@
                                     BorderThickness="1"
                                     CornerRadius="3"
                                     Padding="8"
-                                    Margin="0,0,3,0">
+                                    Margin="0,0,4,0">
                                 <StackPanel>
-                                    <TextBlock Text="L₂ Discrepancy"
-                                              FontSize="10"
-                                              Foreground="#B0B0B0"
-                                              FontWeight="SemiBold"
-                                              Margin="0,0,0,4"/>
-                                    <TextBlock Text="{Binding CDValue}"
-                                              FontSize="18"
-                                              FontWeight="Bold"
-                                              Foreground="White"
-                                              HorizontalAlignment="Center"/>
-                                    <TextBlock Text="{Binding CDRating}"
+                                    <TextBlock Text="CD*"
                                               FontSize="9"
                                               Foreground="#B0B0B0"
-                                              HorizontalAlignment="Center"
-                                              Margin="0,2,0,0"/>
+                                              Margin="0,0,0,2"/>
+                                    <TextBlock HorizontalAlignment="Center">
+                                        <Run Text="{Binding CDValue, Mode=OneWay}"
+                                             FontSize="14"
+                                             FontWeight="Bold"
+                                             Foreground="White"/>
+                                        <Run Text=" "
+                                             FontSize="11"/>
+                                        <Run Text="{Binding CDRating, Mode=OneWay}"
+                                             FontSize="14"
+                                             Foreground="#FFA726"/>
+                                    </TextBlock>
                                 </StackPanel>
                             </Border>
 
@@ -318,27 +346,27 @@
                                     BorderThickness="1"
                                     CornerRadius="3"
                                     Padding="8"
-                                    Margin="0,0,3,0">
+                                    Margin="0,0,4,0">
                                 <StackPanel>
-                                    <TextBlock Text="Voronoi CV"
-                                              FontSize="10"
-                                              Foreground="#B0B0B0"
-                                              FontWeight="SemiBold"
-                                              Margin="0,0,0,4"/>
-                                    <TextBlock Text="{Binding VoronoiValue}"
-                                              FontSize="18"
-                                              FontWeight="Bold"
-                                              Foreground="White"
-                                              HorizontalAlignment="Center"/>
-                                    <TextBlock Text="{Binding VoronoiRating}"
+                                    <TextBlock Text="VCV*"
                                               FontSize="9"
                                               Foreground="#B0B0B0"
-                                              HorizontalAlignment="Center"
-                                              Margin="0,2,0,0"/>
+                                              Margin="0,0,0,2"/>
+                                    <TextBlock HorizontalAlignment="Center">
+                                        <Run Text="{Binding VoronoiValue, Mode=OneWay}"
+                                             FontSize="14"
+                                             FontWeight="Bold"
+                                             Foreground="White"/>
+                                        <Run Text=" "
+                                             FontSize="11"/>
+                                        <Run Text="{Binding VoronoiRating, Mode=OneWay}"
+                                             FontSize="14"
+                                             Foreground="#FFA726"/>
+                                    </TextBlock>
                                 </StackPanel>
                             </Border>
 
-                            <!-- Nearest Neighbor Index -->
+                            <!-- NNI -->
                             <Border Grid.Column="2"
                                     Background="{DynamicResource TertiaryBackgroundBrush}"
                                     BorderBrush="{DynamicResource BorderBrush}"
@@ -346,31 +374,31 @@
                                     CornerRadius="3"
                                     Padding="8">
                                 <StackPanel>
-                                    <TextBlock Text="NN Index"
-                                              FontSize="10"
-                                              Foreground="#B0B0B0"
-                                              FontWeight="SemiBold"
-                                              Margin="0,0,0,4"/>
-                                    <TextBlock Text="{Binding NNIValue}"
-                                              FontSize="18"
-                                              FontWeight="Bold"
-                                              Foreground="White"
-                                              HorizontalAlignment="Center"/>
-                                    <TextBlock Text="{Binding NNIRating}"
+                                    <TextBlock Text="NNI*"
                                               FontSize="9"
                                               Foreground="#B0B0B0"
-                                              HorizontalAlignment="Center"
-                                              Margin="0,2,0,0"/>
+                                              Margin="0,0,0,2"/>
+                                    <TextBlock HorizontalAlignment="Center">
+                                        <Run Text="{Binding NNIValue, Mode=OneWay}"
+                                             FontSize="14"
+                                             FontWeight="Bold"
+                                             Foreground="White"/>
+                                        <Run Text=" "
+                                             FontSize="11"/>
+                                        <Run Text="{Binding NNIRating, Mode=OneWay}"
+                                             FontSize="14"
+                                             Foreground="#FFA726"/>
+                                    </TextBlock>
                                 </StackPanel>
                             </Border>
                         </Grid>
 
                         <!-- Drizzle Gap-Fill Metrics -->
-                        <StackPanel Margin="0,10,0,10">
-                            <TextBlock Text="Drizzle Coverage"
-                                      FontSize="11"
+                        <StackPanel Margin="0,0,0,10">
+                            <TextBlock Text="🔬 Drizzle Gap-Fill Prediction (Sub-pixel Coverage)"
+                                      FontSize="10"
                                       FontWeight="SemiBold"
-                                      Foreground="White"
+                                      Foreground="#B0B0B0"
                                       Margin="0,0,0,6"/>
 
                             <Grid>
@@ -386,24 +414,19 @@
                                         BorderBrush="{DynamicResource BorderBrush}"
                                         BorderThickness="1"
                                         CornerRadius="3"
-                                        Padding="6"
-                                        Margin="0,0,3,0">
+                                        Padding="8"
+                                        Margin="0,0,4,0">
                                     <StackPanel>
                                         <TextBlock Text="1× Drizzle"
-                                                  FontSize="10"
-                                                  FontWeight="SemiBold"
+                                                  FontSize="9"
+                                                  Foreground="#B0B0B0"
                                                   HorizontalAlignment="Center"
-                                                  Foreground="#B0B0B0"/>
-                                        <TextBlock Text="{Binding GFM1xValue}"
-                                                  FontSize="16"
+                                                  Margin="0,0,0,2"/>
+                                        <TextBlock Text="{Binding GFM1xValue, Mode=OneWay}"
+                                                  FontSize="13"
                                                   FontWeight="Bold"
-                                                  HorizontalAlignment="Center"
                                                   Foreground="White"
-                                                  Margin="0,3,0,2"/>
-                                        <TextBlock Text="Target >98%"
-                                                  FontSize="8"
-                                                  HorizontalAlignment="Center"
-                                                  Foreground="#808080"/>
+                                                  HorizontalAlignment="Center"/>
                                     </StackPanel>
                                 </Border>
 
@@ -413,24 +436,19 @@
                                         BorderBrush="{DynamicResource BorderBrush}"
                                         BorderThickness="1"
                                         CornerRadius="3"
-                                        Padding="6"
-                                        Margin="0,0,3,0">
+                                        Padding="8"
+                                        Margin="0,0,4,0">
                                     <StackPanel>
                                         <TextBlock Text="2× Drizzle"
-                                                  FontSize="10"
-                                                  FontWeight="SemiBold"
+                                                  FontSize="9"
+                                                  Foreground="#B0B0B0"
                                                   HorizontalAlignment="Center"
-                                                  Foreground="#B0B0B0"/>
-                                        <TextBlock Text="{Binding GFM2xValue}"
-                                                  FontSize="16"
+                                                  Margin="0,0,0,2"/>
+                                        <TextBlock Text="{Binding GFM2xValue, Mode=OneWay}"
+                                                  FontSize="13"
                                                   FontWeight="Bold"
-                                                  HorizontalAlignment="Center"
                                                   Foreground="White"
-                                                  Margin="0,3,0,2"/>
-                                        <TextBlock Text="Target >95%"
-                                                  FontSize="8"
-                                                  HorizontalAlignment="Center"
-                                                  Foreground="#808080"/>
+                                                  HorizontalAlignment="Center"/>
                                     </StackPanel>
                                 </Border>
 
@@ -440,23 +458,18 @@
                                         BorderBrush="{DynamicResource BorderBrush}"
                                         BorderThickness="1"
                                         CornerRadius="3"
-                                        Padding="6">
+                                        Padding="8">
                                     <StackPanel>
                                         <TextBlock Text="3× Drizzle"
-                                                  FontSize="10"
-                                                  FontWeight="SemiBold"
+                                                  FontSize="9"
+                                                  Foreground="#B0B0B0"
                                                   HorizontalAlignment="Center"
-                                                  Foreground="#B0B0B0"/>
-                                        <TextBlock Text="{Binding GFM3xValue}"
-                                                  FontSize="16"
+                                                  Margin="0,0,0,2"/>
+                                        <TextBlock Text="{Binding GFM3xValue, Mode=OneWay}"
+                                                  FontSize="13"
                                                   FontWeight="Bold"
-                                                  HorizontalAlignment="Center"
                                                   Foreground="White"
-                                                  Margin="0,3,0,2"/>
-                                        <TextBlock Text="Target >90%"
-                                                  FontSize="8"
-                                                  HorizontalAlignment="Center"
-                                                  Foreground="#808080"/>
+                                                  HorizontalAlignment="Center"/>
                                     </StackPanel>
                                 </Border>
                             </Grid>
@@ -475,7 +488,7 @@
                                           FontWeight="SemiBold"
                                           Foreground="#B0B0B0"
                                           Margin="0,0,0,4"/>
-                                <TextBlock Text="{Binding QualityResult.Recommendation}"
+                                <TextBlock Text="{Binding QualityResult.Recommendation, Mode=OneWay}"
                                           FontSize="10"
                                           TextWrapping="Wrap"
                                           Foreground="White"
@@ -496,7 +509,7 @@
                                 <Run Text="Based on"
                                      Foreground="#808080"
                                      FontSize="9"/>
-                                <Run Text="{Binding QualityResult.TotalDithers, StringFormat='{}{0} dithers'}"
+                                <Run Text="{Binding QualityResult.TotalDithers, StringFormat='{}{0} dithers', Mode=OneWay}"
                                      Foreground="#B0B0B0"
                                      FontSize="9"
                                      FontWeight="SemiBold"/>
@@ -529,7 +542,7 @@
                         <Style TargetType="Border">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasQualityData}" Value="False">
+                                <DataTrigger Binding="{Binding HasQualityData, Mode=OneWay}" Value="False">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                             </Style.Triggers>
@@ -565,7 +578,7 @@
                                   Foreground="White"
                                   Margin="0,0,0,10"/>
 
-                        <UniformGrid Columns="1" Rows="3">
+                        <UniformGrid Columns="1" Rows="2">
                             <Button Content="Clear Data" 
                                    Command="{Binding ClearDataCommand}" 
                                    Background="{DynamicResource ButtonBackgroundBrush}"
@@ -580,19 +593,9 @@
                                    Background="{DynamicResource ButtonBackgroundBrush}"
                                    Foreground="White"
                                    Padding="10,8"
-                                   Margin="0,0,0,5"
                                    BorderThickness="0"
                                    Cursor="Hand"
                                    ToolTip="Export dither events to CSV (timestamps, pixel shifts, settle times)"/>
-
-                            <Button Content="📊 Export Metrics CSV" 
-                                   Command="{Binding ExportQualityMetricsCsvCommand}" 
-                                   Background="{DynamicResource ButtonBackgroundBrush}"
-                                   Foreground="White"
-                                   Padding="10,8"
-                                   BorderThickness="0"
-                                   Cursor="Hand"
-                                   ToolTip="Export quality metrics to CSV (CD, Voronoi CV, GFM, etc.)"/>
                         </UniformGrid>
                     </StackPanel>
                 </Border>
