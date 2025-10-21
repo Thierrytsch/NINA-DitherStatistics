@@ -438,7 +438,7 @@ Dependencies
 
     N.I.N.A. 3.0 or later
     .NET 8.0 Runtime
-    Guiding software (PHD2 or N.I.N.A. Direct Guider)
+    Guiding software (PHD2)
 
 Built With
 
