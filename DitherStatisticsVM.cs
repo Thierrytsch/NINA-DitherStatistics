@@ -334,6 +334,11 @@ namespace DitherStatistics.Plugin {
             ? $"{QualityResult.GapFillMetric_3x:P1}"
             : "N/A";
 
+        // Target Coverage für Gap-Fill Metrics (konstante Werte)
+        public string GFM1xTarget => "Target: 98%";
+        public string GFM2xTarget => "Target: 95%";
+        public string GFM3xTarget => "Target: 90%";
+
         public string VoronoiValue => QualityResult != null
             ? $"{QualityResult.VoronoiCV:F3}"
             : "N/A";
@@ -623,24 +628,25 @@ namespace DitherStatistics.Plugin {
         }
 
         private string GetCDRatingShort(double cd) {
-            if (cd < 0.15) return "★★★";
-            if (cd < 0.25) return "★★";
-            if (cd < 0.35) return "★";
-            return "✗";
+            if (cd < 0.02) return "Excellent";
+            if (cd < 0.05) return "Good";
+            if (cd < 0.08) return "Acceptable";
+            if (cd < 0.10) return "Fair";
+            return "Poor";
         }
 
         private string GetVoronoiRatingShort(double cv) {
-            if (cv < 0.25) return "★★★";
-            if (cv < 0.35) return "★★";
-            if (cv < 0.50) return "★";
-            return "✗";
+            if (cv < 0.2) return "Excellent";
+            if (cv < 0.3) return "Good";
+            if (cv < 0.5) return "Acceptable";
+            return "Poor";
         }
 
         private string GetNNIRatingShort(double nni) {
-            if (Math.Abs(nni - 1.0) < 0.15) return "★★★";
-            if (Math.Abs(nni - 1.0) < 0.30) return "★★";
-            if (Math.Abs(nni - 1.0) < 0.50) return "★";
-            return "✗";
+            if (Math.Abs(nni - 1.0) < 0.15) return "Excellent";
+            if (Math.Abs(nni - 1.0) < 0.30) return "Good";
+            if (Math.Abs(nni - 1.0) < 0.50) return "Acceptable";
+            return "Poor";
         }
 
         #endregion

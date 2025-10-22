@@ -325,17 +325,16 @@
                                               FontSize="9"
                                               Foreground="#B0B0B0"
                                               Margin="0,0,0,2"/>
-                                    <TextBlock HorizontalAlignment="Center">
-                                        <Run Text="{Binding CDValue, Mode=OneWay}"
-                                             FontSize="14"
-                                             FontWeight="Bold"
-                                             Foreground="White"/>
-                                        <Run Text=" "
-                                             FontSize="11"/>
-                                        <Run Text="{Binding CDRating, Mode=OneWay}"
-                                             FontSize="14"
-                                             Foreground="#FFA726"/>
-                                    </TextBlock>
+                                    <TextBlock Text="{Binding CDValue, Mode=OneWay}"
+                                              FontSize="14"
+                                              FontWeight="Bold"
+                                              Foreground="White"
+                                              HorizontalAlignment="Center"/>
+                                    <TextBlock Text="{Binding CDRating, Mode=OneWay}"
+                                              FontSize="10"
+                                              Foreground="#B0B0B0"
+                                              HorizontalAlignment="Center"
+                                              Margin="0,2,0,0"/>
                                 </StackPanel>
                             </Border>
 
@@ -352,17 +351,16 @@
                                               FontSize="9"
                                               Foreground="#B0B0B0"
                                               Margin="0,0,0,2"/>
-                                    <TextBlock HorizontalAlignment="Center">
-                                        <Run Text="{Binding VoronoiValue, Mode=OneWay}"
-                                             FontSize="14"
-                                             FontWeight="Bold"
-                                             Foreground="White"/>
-                                        <Run Text=" "
-                                             FontSize="11"/>
-                                        <Run Text="{Binding VoronoiRating, Mode=OneWay}"
-                                             FontSize="14"
-                                             Foreground="#FFA726"/>
-                                    </TextBlock>
+                                    <TextBlock Text="{Binding VoronoiValue, Mode=OneWay}"
+                                              FontSize="14"
+                                              FontWeight="Bold"
+                                              Foreground="White"
+                                              HorizontalAlignment="Center"/>
+                                    <TextBlock Text="{Binding VoronoiRating, Mode=OneWay}"
+                                              FontSize="10"
+                                              Foreground="#B0B0B0"
+                                              HorizontalAlignment="Center"
+                                              Margin="0,2,0,0"/>
                                 </StackPanel>
                             </Border>
 
@@ -378,17 +376,16 @@
                                               FontSize="9"
                                               Foreground="#B0B0B0"
                                               Margin="0,0,0,2"/>
-                                    <TextBlock HorizontalAlignment="Center">
-                                        <Run Text="{Binding NNIValue, Mode=OneWay}"
-                                             FontSize="14"
-                                             FontWeight="Bold"
-                                             Foreground="White"/>
-                                        <Run Text=" "
-                                             FontSize="11"/>
-                                        <Run Text="{Binding NNIRating, Mode=OneWay}"
-                                             FontSize="14"
-                                             Foreground="#FFA726"/>
-                                    </TextBlock>
+                                    <TextBlock Text="{Binding NNIValue, Mode=OneWay}"
+                                              FontSize="14"
+                                              FontWeight="Bold"
+                                              Foreground="White"
+                                              HorizontalAlignment="Center"/>
+                                    <TextBlock Text="{Binding NNIRating, Mode=OneWay}"
+                                              FontSize="10"
+                                              Foreground="#B0B0B0"
+                                              HorizontalAlignment="Center"
+                                              Margin="0,2,0,0"/>
                                 </StackPanel>
                             </Border>
                         </Grid>
@@ -427,6 +424,11 @@
                                                   FontWeight="Bold"
                                                   Foreground="White"
                                                   HorizontalAlignment="Center"/>
+                                        <TextBlock Text="{Binding GFM1xTarget, Mode=OneWay}"
+                                                  FontSize="9"
+                                                  Foreground="#B0B0B0"
+                                                  HorizontalAlignment="Center"
+                                                  Margin="0,2,0,0"/>
                                     </StackPanel>
                                 </Border>
 
@@ -449,6 +451,11 @@
                                                   FontWeight="Bold"
                                                   Foreground="White"
                                                   HorizontalAlignment="Center"/>
+                                        <TextBlock Text="{Binding GFM2xTarget, Mode=OneWay}"
+                                                  FontSize="9"
+                                                  Foreground="#B0B0B0"
+                                                  HorizontalAlignment="Center"
+                                                  Margin="0,2,0,0"/>
                                     </StackPanel>
                                 </Border>
 
@@ -470,6 +477,11 @@
                                                   FontWeight="Bold"
                                                   Foreground="White"
                                                   HorizontalAlignment="Center"/>
+                                        <TextBlock Text="{Binding GFM3xTarget, Mode=OneWay}"
+                                                  FontSize="9"
+                                                  Foreground="#B0B0B0"
+                                                  HorizontalAlignment="Center"
+                                                  Margin="0,2,0,0"/>
                                     </StackPanel>
                                 </Border>
                             </Grid>
