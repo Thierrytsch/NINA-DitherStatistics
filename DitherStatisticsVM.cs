@@ -307,6 +307,7 @@ namespace DitherStatistics.Plugin {
 
         public string QualityRatingColor => QualityResult?.QualityRating switch {
             "Excellent" => "#4CAF50",
+            "Very Good" => "#66BB6A",
             "Good" => "#8BC34A",
             "Acceptable" => "#FFC107",
             "Fair" => "#FF9800",
@@ -334,10 +335,10 @@ namespace DitherStatistics.Plugin {
             ? $"{QualityResult.GapFillMetric_3x:P1}"
             : "N/A";
 
-        // Target Coverage für Gap-Fill Metrics (konstante Werte)
-        public string GFM1xTarget => "Target: 98%";
-        public string GFM2xTarget => "Target: 95%";
-        public string GFM3xTarget => "Target: 90%";
+        // Target Coverage für Gap-Fill Metrics (using centralized thresholds)
+        public string GFM1xTarget => $"Target: {DitherQualityMetrics.QualityThresholds.GFM_Target_1x:P0}";
+        public string GFM2xTarget => $"Target: {DitherQualityMetrics.QualityThresholds.GFM_Target_2x:P0}";
+        public string GFM3xTarget => $"Target: {DitherQualityMetrics.QualityThresholds.GFM_Target_3x:P0}";
 
         public string VoronoiValue => QualityResult != null
             ? $"{QualityResult.VoronoiCV:F3}"
@@ -628,24 +629,30 @@ namespace DitherStatistics.Plugin {
         }
 
         private string GetCDRatingShort(double cd) {
-            if (cd < 0.02) return "Excellent";
-            if (cd < 0.05) return "Good";
-            if (cd < 0.08) return "Acceptable";
-            if (cd < 0.10) return "Fair";
+            // Uses centralized thresholds from DitherQualityMetrics.QualityThresholds
+            if (cd < DitherQualityMetrics.QualityThresholds.CD_Excellent) return "Excellent";
+            if (cd < DitherQualityMetrics.QualityThresholds.CD_VeryGood) return "Very Good";
+            if (cd < DitherQualityMetrics.QualityThresholds.CD_Good) return "Good";
+            if (cd < DitherQualityMetrics.QualityThresholds.CD_Acceptable) return "Acceptable";
+            if (cd < DitherQualityMetrics.QualityThresholds.CD_Fair) return "Fair";
             return "Poor";
         }
 
         private string GetVoronoiRatingShort(double cv) {
-            if (cv < 0.2) return "Excellent";
-            if (cv < 0.3) return "Good";
-            if (cv < 0.5) return "Acceptable";
+            // Uses centralized thresholds from DitherQualityMetrics.QualityThresholds
+            if (cv < DitherQualityMetrics.QualityThresholds.VoronoiCV_Excellent) return "Excellent";
+            if (cv < DitherQualityMetrics.QualityThresholds.VoronoiCV_Good) return "Good";
+            if (cv < DitherQualityMetrics.QualityThresholds.VoronoiCV_Acceptable) return "Acceptable";
+            if (cv < DitherQualityMetrics.QualityThresholds.VoronoiCV_Fair) return "Fair";
             return "Poor";
         }
 
         private string GetNNIRatingShort(double nni) {
-            if (Math.Abs(nni - 1.0) < 0.15) return "Excellent";
-            if (Math.Abs(nni - 1.0) < 0.30) return "Good";
-            if (Math.Abs(nni - 1.0) < 0.50) return "Acceptable";
+            // Uses centralized thresholds from DitherQualityMetrics.QualityThresholds
+            if (nni > DitherQualityMetrics.QualityThresholds.NNI_Excellent) return "Excellent";
+            if (nni > DitherQualityMetrics.QualityThresholds.NNI_Good) return "Good";
+            if (nni > DitherQualityMetrics.QualityThresholds.NNI_Acceptable) return "Acceptable";
+            if (nni > DitherQualityMetrics.QualityThresholds.NNI_Fair) return "Fair";
             return "Poor";
         }
 
