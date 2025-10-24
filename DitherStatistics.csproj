@@ -91,6 +91,7 @@ Minimum 4 dithers required for quality metrics. Assessments improve with 15+ pos
 * Migrated from LiveCharts to ScottPlot for better performance and NINA 3.2 compatibility
 * Full compatibility with both NINA 3.1 and NINA 3.2
 * Optimized PostBuild to copy only necessary DLLs
+* Look and feel improvements
 
 # Data Export
 Export comprehensive quality reports including all metrics, dither positions, and recommendations to text files.
