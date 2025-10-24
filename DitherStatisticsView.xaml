@@ -628,11 +628,10 @@
                                       VerticalAlignment="Center"
                                       Margin="2,0,0,0">
                                 <Run Text="Based on"
-                                     FontSize="9">
-                                    <Run.Foreground>
-                                        <SolidColorBrush Color="{DynamicResource ButtonForegroundDisabledColor}" Opacity="0.7"/>
-                                    </Run.Foreground>
-                                </Run>
+                                     Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                     FontSize="9"
+                                     FontWeight="SemiBold"/>
+                                <Run Text=" "/>
                                 <Run Text="{Binding QualityResult.TotalDithers, StringFormat='{}{0} dithers', Mode=OneWay}"
                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                      FontSize="9"
