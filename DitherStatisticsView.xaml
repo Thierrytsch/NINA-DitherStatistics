@@ -9,25 +9,106 @@
 
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- NINA StandardCheckBox Style - exact copy from NINA source -->
+        <Style x:Key="ToggleSwitchStyle" TargetType="CheckBox">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Width" Value="65" />
+            <Setter Property="Height" Value="25" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid>
+                            <!-- Track -->
+                            <Border
+                                x:Name="SwitchTrack"
+                                Background="Transparent"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="12.5" />
+                            <Grid>
+                                <TextBlock
+                                    x:Name="OnText"
+                                    Margin="8,0,0,0"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    FontWeight="Bold"
+                                    Foreground="{DynamicResource ButtonForegroundBrush}"
+                                    Text="ON"
+                                    Visibility="Collapsed" />
+                                <TextBlock
+                                    x:Name="OffText"
+                                    Margin="0,0,8,0"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Foreground="{DynamicResource PrimaryBrush}"
+                                    Text="OFF"
+                                    Visibility="Visible" />
+                            </Grid>
+                            <!-- Thumb -->
+                            <Ellipse
+                                x:Name="SwitchThumb"
+                                Width="21"
+                                Height="21"
+                                Margin="2"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center"
+                                Fill="{DynamicResource SecondaryBackgroundBrush}" />
+                        </Grid>
+
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="SwitchTrack" Property="Background" Value="{DynamicResource TertiaryBackgroundBrush}" />
+                                <Setter TargetName="SwitchThumb" Property="HorizontalAlignment" Value="Right" />
+                                <Setter TargetName="OnText" Property="Visibility" Value="Visible" />
+                                <Setter TargetName="OffText" Property="Visibility" Value="Collapsed" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="False">
+                                <Setter TargetName="SwitchTrack" Property="Background" Value="Transparent" />
+                                <Setter TargetName="SwitchThumb" Property="HorizontalAlignment" Value="Left" />
+                                <Setter TargetName="OnText" Property="Visibility" Value="Collapsed" />
+                                <Setter TargetName="OffText" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="SwitchTrack" Property="Opacity" Value="0.4" />
+                                <Setter TargetName="SwitchThumb" Property="Opacity" Value="0.4" />
+                                <Setter TargetName="OnText" Property="Opacity" Value="0.4" />
+                                <Setter TargetName="OffText" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="QualityButton" TargetType="Button">
             <Setter Property="Background" Value="{DynamicResource ButtonBackgroundBrush}"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Foreground" Value="{DynamicResource ButtonForegroundBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="8,4"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="3"
                                 Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="contentText"
+                                      Text="{TemplateBinding Content}"
+                                      Foreground="{TemplateBinding Foreground}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      TextAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="{DynamicResource ButtonBackgroundSelectedBrush}"/>
+                                <Setter TargetName="border" Property="Background" Value="{DynamicResource ButtonBackgroundSelectedBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{DynamicResource ButtonBackgroundSelectedBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -50,7 +131,7 @@
                         <TextBlock Text="Pixel Shift" 
                                   FontSize="14" 
                                   FontWeight="SemiBold" 
-                                  Foreground="White"
+                                  Foreground="{DynamicResource PrimaryBrush}"
                                   Margin="0,0,0,10"/>
 
                         <!-- Grid for Chart + Tooltip Overlay -->
@@ -59,17 +140,18 @@
                             <ContentControl Content="{Binding PixelShiftPlot}"/>
 
                             <!-- Tooltip Overlay -->
-                            <Border Background="#DD2D2D30" 
-                                   BorderBrush="#FF00A0FF" 
+                            <Border BorderBrush="#FF00A0FF" 
                                    BorderThickness="2"
                                    CornerRadius="3"
                                    Padding="8"
                                    HorizontalAlignment="Left"
                                    VerticalAlignment="Top"
                                    Margin="10"
+                                   Opacity="0.95"
+                                   Background="{DynamicResource TertiaryBackgroundBrush}"
                                    Visibility="{Binding PixelShiftTooltipVisible, Converter={StaticResource BoolToVis}}">
                                 <TextBlock Text="{Binding PixelShiftTooltipText}"
-                                          Foreground="White"
+                                          Foreground="{DynamicResource PrimaryBrush}"
                                           FontSize="13"
                                           FontWeight="SemiBold"/>
                             </Border>
@@ -87,7 +169,7 @@
                         <TextBlock Text="Settle Time History" 
                                   FontSize="14" 
                                   FontWeight="SemiBold" 
-                                  Foreground="White"
+                                  Foreground="{DynamicResource PrimaryBrush}"
                                   Margin="0,0,0,10"/>
 
                         <!-- Grid for Chart + Tooltip Overlay -->
@@ -96,17 +178,18 @@
                             <ContentControl Content="{Binding SettleTimePlot}"/>
 
                             <!-- Tooltip Overlay -->
-                            <Border Background="#DD2D2D30" 
-                                   BorderBrush="#FF1E90FF" 
+                            <Border BorderBrush="#FF1E90FF" 
                                    BorderThickness="2"
                                    CornerRadius="3"
                                    Padding="8"
                                    HorizontalAlignment="Left"
                                    VerticalAlignment="Top"
                                    Margin="10"
+                                   Opacity="0.95"
+                                   Background="{DynamicResource TertiaryBackgroundBrush}"
                                    Visibility="{Binding SettleTimeTooltipVisible, Converter={StaticResource BoolToVis}}">
                                 <TextBlock Text="{Binding SettleTimeTooltipText}"
-                                          Foreground="White"
+                                          Foreground="{DynamicResource PrimaryBrush}"
                                           FontSize="13"
                                           FontWeight="SemiBold"/>
                             </Border>
@@ -124,7 +207,7 @@
                                         Margin="0,0,4,0"/>
                                 <TextBlock Text="Settle Time" 
                                           FontSize="10" 
-                                          Foreground="#B0B0B0"
+                                          Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                           VerticalAlignment="Center"/>
                             </StackPanel>
 
@@ -147,7 +230,7 @@
                                 </Rectangle>
                                 <TextBlock Text="Average" 
                                           FontSize="10" 
-                                          Foreground="#B0B0B0"
+                                          Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                           VerticalAlignment="Center"/>
                             </StackPanel>
 
@@ -173,7 +256,7 @@
                                 </Rectangle>
                                 <TextBlock Text="Avg ± StdDev" 
                                           FontSize="10" 
-                                          Foreground="#B0B0B0"
+                                          Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                           VerticalAlignment="Center"/>
                             </StackPanel>
                         </StackPanel>
@@ -190,7 +273,7 @@
                         <TextBlock Text="Statistics" 
                                   FontSize="14" 
                                   FontWeight="SemiBold" 
-                                  Foreground="White"
+                                  Foreground="{DynamicResource PrimaryBrush}"
                                   Margin="0,0,0,10"/>
 
                         <Grid>
@@ -206,41 +289,57 @@
                             <!-- Zeile 1: Dithers (volle Breite) -->
                             <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" 
                                       Margin="0,0,0,6">
-                                <Run Text="Dithers: " Foreground="#B0B0B0"/>
+                                <Run Text="Dithers: " Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
                                 <Run Text="{Binding TotalDithers, Mode=OneWay}" 
-                                     Foreground="White" FontWeight="Bold"/>
-                                <Run Text="/" Foreground="White" FontWeight="Bold"/>
+                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
+                                <Run Text="/" Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
                                 <Run Text="{Binding SuccessfulDithers, Mode=OneWay}" 
-                                     Foreground="White" FontWeight="Bold"/>
-                                <Run Text="/" Foreground="White" FontWeight="Bold"/>
+                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
+                                <Run Text="/" Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
                                 <Run Text="{Binding SuccessRate, StringFormat='{}{0:F1}%', Mode=OneWay}" 
-                                     Foreground="White" FontWeight="Bold"/>
-                                <Run Text=" (Total/Success/Rate)" Foreground="#808080" FontSize="11"/>
+                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
+                                <Run Text=" (Total/Success/Rate)" FontSize="11">
+                                    <Run.Foreground>
+                                        <SolidColorBrush Color="{DynamicResource ButtonForegroundDisabledColor}" Opacity="0.7"/>
+                                    </Run.Foreground>
+                                </Run>
                             </TextBlock>
 
                             <!-- Zeile 2, Links: Median -->
                             <TextBlock Grid.Row="1" Grid.Column="0" 
                                       Margin="0,0,10,0">
-                                <Run Text="Median: " Foreground="#B0B0B0"/>
+                                <Run Text="Median: " Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
                                 <Run Text="{Binding MedianSettleTime, StringFormat='{}{0:F2}s', Mode=OneWay}" 
-                                     Foreground="White" FontWeight="Bold"/>
-                                <Run Text=", (Min: " Foreground="#808080" FontSize="11"/>
+                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
+                                <Run Text=", (Min: " FontSize="11">
+                                    <Run.Foreground>
+                                        <SolidColorBrush Color="{DynamicResource ButtonForegroundDisabledColor}" Opacity="0.7"/>
+                                    </Run.Foreground>
+                                </Run>
                                 <Run Text="{Binding MinSettleTime, StringFormat='{}{0:F2}s', Mode=OneWay}" 
-                                     Foreground="White" FontWeight="Bold" FontSize="11"/>
-                                <Run Text=" / Max: " Foreground="#808080" FontSize="11"/>
+                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold" FontSize="11"/>
+                                <Run Text=" / Max: " FontSize="11">
+                                    <Run.Foreground>
+                                        <SolidColorBrush Color="{DynamicResource ButtonForegroundDisabledColor}" Opacity="0.7"/>
+                                    </Run.Foreground>
+                                </Run>
                                 <Run Text="{Binding MaxSettleTime, StringFormat='{}{0:F2}s', Mode=OneWay}" 
-                                     Foreground="White" FontWeight="Bold" FontSize="11"/>
-                                <Run Text=")" Foreground="#808080" FontSize="11"/>
+                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold" FontSize="11"/>
+                                <Run Text=")" FontSize="11">
+                                    <Run.Foreground>
+                                        <SolidColorBrush Color="{DynamicResource ButtonForegroundDisabledColor}" Opacity="0.7"/>
+                                    </Run.Foreground>
+                                </Run>
                             </TextBlock>
 
                             <!-- Zeile 2, Rechts: Drift -->
                             <TextBlock Grid.Row="1" Grid.Column="1">
-                                <Run Text="Drift: X: " Foreground="#B0B0B0"/>
+                                <Run Text="Drift: X: " Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
                                 <Run Text="{Binding TotalDriftX, StringFormat='{}{0:F2}px', Mode=OneWay}" 
-                                     Foreground="White" FontWeight="Bold"/>
-                                <Run Text=" / Y: " Foreground="#B0B0B0"/>
+                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
+                                <Run Text=" / Y: " Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
                                 <Run Text="{Binding TotalDriftY, StringFormat='{}{0:F2}px', Mode=OneWay}" 
-                                     Foreground="White" FontWeight="Bold"/>
+                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
                             </TextBlock>
                         </Grid>
                     </StackPanel>
@@ -252,12 +351,13 @@
                        BorderThickness="1" 
                        Padding="15" 
                        Margin="0,0,0,10"
-                       Visibility="{Binding HasQualityData, Converter={StaticResource BoolToVis}, Mode=OneWay}">
+                       Visibility="{Binding ShowQualityAssessment, Converter={StaticResource BoolToVis}, Mode=OneWay}">
                     <StackPanel>
                         <!-- Header with Overall Rating und EXPERIMENTAL Badge -->
                         <Grid Margin="0,0,0,15">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
@@ -266,7 +366,7 @@
                                 <TextBlock Text="📊 Dither Quality Assessment"
                                           FontSize="14"
                                           FontWeight="Bold"
-                                          Foreground="White"
+                                          Foreground="{DynamicResource PrimaryBrush}"
                                           VerticalAlignment="Center"
                                           Margin="0,0,8,0"/>
 
@@ -286,7 +386,8 @@
                             <!-- Overall Rating Badge -->
                             <Border Grid.Column="1"
                                     CornerRadius="10"
-                                    Padding="10,4">
+                                    Padding="10,4"
+                                    Margin="0,0,8,0">
                                 <Border.Background>
                                     <SolidColorBrush Color="{Binding QualityRatingColor, Mode=OneWay}"/>
                                 </Border.Background>
@@ -302,6 +403,14 @@
                                               Opacity="0.9"/>
                                 </StackPanel>
                             </Border>
+
+                            <!-- Toggle Button for Quality Assessment -->
+                            <CheckBox Grid.Column="2"
+                                     IsChecked="{Binding IsQualityAssessmentEnabled, Mode=TwoWay}"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,5,0"
+                                     ToolTip="Enable/Disable Quality Assessment"
+                                     Style="{DynamicResource ToggleSwitchStyle}"/>
                         </Grid>
 
                         <!-- Primary Metrics Grid -->
@@ -323,16 +432,16 @@
                                 <StackPanel>
                                     <TextBlock Text="CD*"
                                               FontSize="9"
-                                              Foreground="#B0B0B0"
+                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                               Margin="0,0,0,2"/>
                                     <TextBlock Text="{Binding CDValue, Mode=OneWay}"
                                               FontSize="14"
                                               FontWeight="Bold"
-                                              Foreground="White"
+                                              Foreground="{DynamicResource PrimaryBrush}"
                                               HorizontalAlignment="Center"/>
                                     <TextBlock Text="{Binding CDRating, Mode=OneWay}"
                                               FontSize="10"
-                                              Foreground="#B0B0B0"
+                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                               HorizontalAlignment="Center"
                                               Margin="0,2,0,0"/>
                                 </StackPanel>
@@ -349,16 +458,16 @@
                                 <StackPanel>
                                     <TextBlock Text="VCV*"
                                               FontSize="9"
-                                              Foreground="#B0B0B0"
+                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                               Margin="0,0,0,2"/>
                                     <TextBlock Text="{Binding VoronoiValue, Mode=OneWay}"
                                               FontSize="14"
                                               FontWeight="Bold"
-                                              Foreground="White"
+                                              Foreground="{DynamicResource PrimaryBrush}"
                                               HorizontalAlignment="Center"/>
                                     <TextBlock Text="{Binding VoronoiRating, Mode=OneWay}"
                                               FontSize="10"
-                                              Foreground="#B0B0B0"
+                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                               HorizontalAlignment="Center"
                                               Margin="0,2,0,0"/>
                                 </StackPanel>
@@ -374,16 +483,16 @@
                                 <StackPanel>
                                     <TextBlock Text="NNI*"
                                               FontSize="9"
-                                              Foreground="#B0B0B0"
+                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                               Margin="0,0,0,2"/>
                                     <TextBlock Text="{Binding NNIValue, Mode=OneWay}"
                                               FontSize="14"
                                               FontWeight="Bold"
-                                              Foreground="White"
+                                              Foreground="{DynamicResource PrimaryBrush}"
                                               HorizontalAlignment="Center"/>
                                     <TextBlock Text="{Binding NNIRating, Mode=OneWay}"
                                               FontSize="10"
-                                              Foreground="#B0B0B0"
+                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                               HorizontalAlignment="Center"
                                               Margin="0,2,0,0"/>
                                 </StackPanel>
@@ -395,7 +504,7 @@
                             <TextBlock Text="🔬 Drizzle Gap-Fill Prediction (Sub-pixel Coverage)"
                                       FontSize="10"
                                       FontWeight="SemiBold"
-                                      Foreground="#B0B0B0"
+                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                       Margin="0,0,0,6"/>
 
                             <Grid>
@@ -416,17 +525,17 @@
                                     <StackPanel>
                                         <TextBlock Text="1× Drizzle"
                                                   FontSize="9"
-                                                  Foreground="#B0B0B0"
+                                                  Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                                   HorizontalAlignment="Center"
                                                   Margin="0,0,0,2"/>
                                         <TextBlock Text="{Binding GFM1xValue, Mode=OneWay}"
                                                   FontSize="13"
                                                   FontWeight="Bold"
-                                                  Foreground="White"
+                                                  Foreground="{DynamicResource PrimaryBrush}"
                                                   HorizontalAlignment="Center"/>
                                         <TextBlock Text="{Binding GFM1xTarget, Mode=OneWay}"
                                                   FontSize="9"
-                                                  Foreground="#B0B0B0"
+                                                  Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                                   HorizontalAlignment="Center"
                                                   Margin="0,2,0,0"/>
                                     </StackPanel>
@@ -443,17 +552,17 @@
                                     <StackPanel>
                                         <TextBlock Text="2× Drizzle"
                                                   FontSize="9"
-                                                  Foreground="#B0B0B0"
+                                                  Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                                   HorizontalAlignment="Center"
                                                   Margin="0,0,0,2"/>
                                         <TextBlock Text="{Binding GFM2xValue, Mode=OneWay}"
                                                   FontSize="13"
                                                   FontWeight="Bold"
-                                                  Foreground="White"
+                                                  Foreground="{DynamicResource PrimaryBrush}"
                                                   HorizontalAlignment="Center"/>
                                         <TextBlock Text="{Binding GFM2xTarget, Mode=OneWay}"
                                                   FontSize="9"
-                                                  Foreground="#B0B0B0"
+                                                  Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                                   HorizontalAlignment="Center"
                                                   Margin="0,2,0,0"/>
                                     </StackPanel>
@@ -469,17 +578,17 @@
                                     <StackPanel>
                                         <TextBlock Text="3× Drizzle"
                                                   FontSize="9"
-                                                  Foreground="#B0B0B0"
+                                                  Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                                   HorizontalAlignment="Center"
                                                   Margin="0,0,0,2"/>
                                         <TextBlock Text="{Binding GFM3xValue, Mode=OneWay}"
                                                   FontSize="13"
                                                   FontWeight="Bold"
-                                                  Foreground="White"
+                                                  Foreground="{DynamicResource PrimaryBrush}"
                                                   HorizontalAlignment="Center"/>
                                         <TextBlock Text="{Binding GFM3xTarget, Mode=OneWay}"
                                                   FontSize="9"
-                                                  Foreground="#B0B0B0"
+                                                  Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                                   HorizontalAlignment="Center"
                                                   Margin="0,2,0,0"/>
                                     </StackPanel>
@@ -498,12 +607,12 @@
                                 <TextBlock Text="💡 Recommendation"
                                           FontSize="10"
                                           FontWeight="SemiBold"
-                                          Foreground="#B0B0B0"
+                                          Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                           Margin="0,0,0,4"/>
                                 <TextBlock Text="{Binding QualityResult.Recommendation, Mode=OneWay}"
                                           FontSize="10"
                                           TextWrapping="Wrap"
-                                          Foreground="White"
+                                          Foreground="{DynamicResource PrimaryBrush}"
                                           LineHeight="14"/>
                             </StackPanel>
                         </Border>
@@ -519,10 +628,13 @@
                                       VerticalAlignment="Center"
                                       Margin="2,0,0,0">
                                 <Run Text="Based on"
-                                     Foreground="#808080"
-                                     FontSize="9"/>
+                                     FontSize="9">
+                                    <Run.Foreground>
+                                        <SolidColorBrush Color="{DynamicResource ButtonForegroundDisabledColor}" Opacity="0.7"/>
+                                    </Run.Foreground>
+                                </Run>
                                 <Run Text="{Binding QualityResult.TotalDithers, StringFormat='{}{0} dithers', Mode=OneWay}"
-                                     Foreground="#B0B0B0"
+                                     Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                      FontSize="9"
                                      FontWeight="SemiBold"/>
                             </TextBlock>
@@ -544,7 +656,7 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Info Box when not enough dithers -->
+                <!-- Info Box when Quality Assessment is disabled or not enough dithers -->
                 <Border Background="{DynamicResource SecondaryBackgroundBrush}"
                        BorderBrush="{DynamicResource BorderBrush}"
                        BorderThickness="1"
@@ -554,28 +666,60 @@
                         <Style TargetType="Border">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasQualityData, Mode=OneWay}" Value="False">
+                                <!-- Show when Quality Assessment is disabled OR when enabled but not enough data -->
+                                <DataTrigger Binding="{Binding ShowQualityAssessment, Mode=OneWay}" Value="False">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </Border.Style>
-                    <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="📊"
-                                  FontSize="20"
-                                  HorizontalAlignment="Center"
-                                  Margin="0,0,0,8"/>
-                        <TextBlock Text="Quality Assessment"
-                                  FontSize="12"
-                                  FontWeight="SemiBold"
-                                  HorizontalAlignment="Center"
-                                  Foreground="White"
-                                  Margin="0,0,0,4"/>
-                        <TextBlock Text="Requires at least 4 dither events"
-                                  FontSize="10"
-                                  HorizontalAlignment="Center"
-                                  Foreground="#B0B0B0"/>
-                    </StackPanel>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Content (centered) -->
+                        <StackPanel Grid.Row="0" Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Text="📊"
+                                      FontSize="20"
+                                      HorizontalAlignment="Center"
+                                      Margin="0,0,0,8"/>
+                            <TextBlock Text="Quality Assessment"
+                                      FontSize="12"
+                                      FontWeight="SemiBold"
+                                      HorizontalAlignment="Center"
+                                      Foreground="{DynamicResource PrimaryBrush}"
+                                      Margin="0,0,0,4"/>
+                            <!-- Show different text based on state -->
+                            <TextBlock FontSize="10"
+                                      HorizontalAlignment="Center"
+                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="Requires at least 4 dither events"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ShowQualityDisabledMessage, Mode=OneWay}" Value="True">
+                                                <Setter Property="Text" Value="Quality Assessment disabled"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+
+                        <!-- Toggle Button at top right -->
+                        <CheckBox Grid.Row="0" Grid.Column="1"
+                                 IsChecked="{Binding IsQualityAssessmentEnabled, Mode=TwoWay}"
+                                 HorizontalAlignment="Right"
+                                 VerticalAlignment="Top"
+                                 Margin="0,0,5,0"
+                                 ToolTip="Enable/Disable Quality Assessment"
+                                 Style="{DynamicResource ToggleSwitchStyle}"/>
+                    </Grid>
                 </Border>
 
                 <!-- Action Buttons -->
@@ -587,26 +731,20 @@
                         <TextBlock Text="Actions" 
                                   FontSize="14" 
                                   FontWeight="SemiBold" 
-                                  Foreground="White"
+                                  Foreground="{DynamicResource PrimaryBrush}"
                                   Margin="0,0,0,10"/>
 
                         <UniformGrid Columns="1" Rows="2">
                             <Button Content="Clear Data" 
                                    Command="{Binding ClearDataCommand}" 
-                                   Background="{DynamicResource ButtonBackgroundBrush}"
-                                   Foreground="White"
+                                   Style="{StaticResource QualityButton}"
                                    Padding="10,8"
-                                   Margin="0,0,0,5"
-                                   BorderThickness="0"
-                                   Cursor="Hand"/>
+                                   Margin="0,0,0,5"/>
 
                             <Button Content="📄 Export Events CSV" 
                                    Command="{Binding ExportDitherEventsCsvCommand}" 
-                                   Background="{DynamicResource ButtonBackgroundBrush}"
-                                   Foreground="White"
+                                   Style="{StaticResource QualityButton}"
                                    Padding="10,8"
-                                   BorderThickness="0"
-                                   Cursor="Hand"
                                    ToolTip="Export dither events to CSV (timestamps, pixel shifts, settle times)"/>
                         </UniformGrid>
                     </StackPanel>

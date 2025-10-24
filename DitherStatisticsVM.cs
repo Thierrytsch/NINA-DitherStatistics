@@ -1,19 +1,20 @@
-﻿using ScottPlot;
-using ScottPlot.Plottable;
-using NINA.Core.Utility;
+﻿using NINA.Core.Utility;
+using NINA.Equipment.Equipment.MyGuider;
 using NINA.Equipment.Interfaces.Mediator;
 using NINA.Equipment.Interfaces.ViewModel;
-using NINA.Equipment.Equipment.MyGuider;
+using NINA.Profile.Interfaces;
 using NINA.WPF.Base.Interfaces.ViewModel;
 using NINA.WPF.Base.ViewModel;
+using ScottPlot;
+using ScottPlot.Plottable;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel.Composition;
 using System.Linq;
+using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Collections.Generic;
-using System.Windows;
 
 namespace DitherStatistics.Plugin {
     /// <summary>
@@ -25,17 +26,23 @@ namespace DitherStatistics.Plugin {
     public partial class DitherStatisticsVM : BaseINPC, IDockableVM, IGuiderConsumer {
         private readonly ObservableCollection<DitherEvent> ditherEvents = new ObservableCollection<DitherEvent>();
         private readonly IGuiderMediator guiderMediator;
+        private readonly IProfileService profileService;
         private readonly PHD2Client phd2Client;
         private DitherEvent currentDither = null;
         private readonly Random random = new Random();
+
+        // Theme color monitoring
+        private System.Windows.Threading.DispatcherTimer themeColorTimer;
+        private System.Drawing.Color lastPrimaryColor = System.Drawing.Color.White;
 
         // Cumulative position tracking for absolute chart display
         private double cumulativeX = 0.0;
         private double cumulativeY = 0.0;
 
         [ImportingConstructor]
-        public DitherStatisticsVM(IGuiderMediator guiderMediator) {
+        public DitherStatisticsVM(IGuiderMediator guiderMediator, IProfileService profileService) {
             this.guiderMediator = guiderMediator;
+            this.profileService = profileService;
 
             Title = "Dither Statistics";
             ContentId = "DitherStatistics_Panel";
@@ -52,6 +59,9 @@ namespace DitherStatistics.Plugin {
             // Initialize quality metrics
             InitializeQualityMetrics();
 
+            // Load quality assessment toggle setting
+            LoadQualityAssessmentSetting();
+
             // Subscribe to NINA guider events (optional, for connection monitoring)
             SubscribeToGuiderEvents();
 
@@ -66,6 +76,9 @@ namespace DitherStatistics.Plugin {
                 await System.Threading.Tasks.Task.Delay(2000);
                 await ConnectToPHD2();
             });
+
+            // Start theme color monitoring for dynamic chart updates
+            StartThemeColorMonitoring();
 
             Logger.Info("DitherStatisticsVM initialized successfully with ScottPlot 4.1 (Lazy Loading)!");
         }
@@ -89,10 +102,20 @@ namespace DitherStatistics.Plugin {
                     );
                     pixelShiftPlot.Plot.XLabel("X Pixels");
                     pixelShiftPlot.Plot.YLabel("Y Pixels");
-                    pixelShiftPlot.Plot.XAxis.Color(System.Drawing.Color.White);
-                    pixelShiftPlot.Plot.YAxis.Color(System.Drawing.Color.White);
-                    pixelShiftPlot.Plot.XAxis.TickLabelStyle(color: System.Drawing.Color.White);
-                    pixelShiftPlot.Plot.YAxis.TickLabelStyle(color: System.Drawing.Color.White);
+
+                    // Get NINA theme colors
+                    var primaryColor = GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
+
+                    // Set axis label colors (same as chart title)
+                    pixelShiftPlot.Plot.XAxis.LabelStyle(color: primaryColor);
+                    pixelShiftPlot.Plot.YAxis.LabelStyle(color: primaryColor);
+
+                    // Set axis, grid, and tick colors to PrimaryBrush
+                    pixelShiftPlot.Plot.XAxis.Color(primaryColor);
+                    pixelShiftPlot.Plot.YAxis.Color(primaryColor);
+                    pixelShiftPlot.Plot.XAxis.TickLabelStyle(color: primaryColor);
+                    pixelShiftPlot.Plot.YAxis.TickLabelStyle(color: primaryColor);
+                    pixelShiftPlot.Plot.Grid(color: System.Drawing.Color.FromArgb(50, primaryColor.R, primaryColor.G, primaryColor.B));
 
                     // ✅ Attach tooltip event handlers
                     AttachPixelShiftTooltip(pixelShiftPlot);
@@ -120,10 +143,20 @@ namespace DitherStatistics.Plugin {
                     );
                     settleTimePlot.Plot.XLabel("Dither #");
                     settleTimePlot.Plot.YLabel("Settle Time (s)");
-                    settleTimePlot.Plot.XAxis.Color(System.Drawing.Color.White);
-                    settleTimePlot.Plot.YAxis.Color(System.Drawing.Color.White);
-                    settleTimePlot.Plot.XAxis.TickLabelStyle(color: System.Drawing.Color.White);
-                    settleTimePlot.Plot.YAxis.TickLabelStyle(color: System.Drawing.Color.White);
+
+                    // Get NINA theme colors
+                    var primaryColor = GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
+
+                    // Set axis label colors (same as chart title)
+                    settleTimePlot.Plot.XAxis.LabelStyle(color: primaryColor);
+                    settleTimePlot.Plot.YAxis.LabelStyle(color: primaryColor);
+
+                    // Set axis, grid, and tick colors to PrimaryBrush
+                    settleTimePlot.Plot.XAxis.Color(primaryColor);
+                    settleTimePlot.Plot.YAxis.Color(primaryColor);
+                    settleTimePlot.Plot.XAxis.TickLabelStyle(color: primaryColor);
+                    settleTimePlot.Plot.YAxis.TickLabelStyle(color: primaryColor);
+                    settleTimePlot.Plot.Grid(color: System.Drawing.Color.FromArgb(50, primaryColor.R, primaryColor.G, primaryColor.B));
 
                     // ✅ Attach tooltip event handlers
                     AttachSettleTimeTooltip(settleTimePlot);
@@ -280,6 +313,72 @@ namespace DitherStatistics.Plugin {
 
         #endregion
 
+        #region Properties - Quality Assessment Toggle
+
+        private bool isQualityAssessmentEnabled;
+        public bool IsQualityAssessmentEnabled {
+            get => isQualityAssessmentEnabled;
+            set {
+                isQualityAssessmentEnabled = value;
+                RaisePropertyChanged();
+                RaisePropertyChanged(nameof(ShowQualityAssessment));
+                RaisePropertyChanged(nameof(ShowQualityDisabledMessage));
+
+                // Save to profile settings
+                SaveQualityAssessmentSetting();
+            }
+        }
+
+        // Computed property: Show quality assessment only if enabled AND has data
+        public bool ShowQualityAssessment => IsQualityAssessmentEnabled && HasQualityData;
+
+        // Show disabled message when toggle is OFF (regardless of data availability)
+        public bool ShowQualityDisabledMessage => !IsQualityAssessmentEnabled;
+
+        // Settings file path
+        private static readonly string SettingsFilePath = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "NINA", "DitherStatistics", "settings.txt"
+        );
+
+        private void LoadQualityAssessmentSetting() {
+            try {
+                // Load from simple text file
+                if (System.IO.File.Exists(SettingsFilePath)) {
+                    var content = System.IO.File.ReadAllText(SettingsFilePath).Trim();
+                    if (bool.TryParse(content, out bool value)) {
+                        IsQualityAssessmentEnabled = value;
+                        Logger.Info($"Quality Assessment setting loaded from file: {IsQualityAssessmentEnabled}");
+                        return;
+                    }
+                }
+
+                // Default: OFF
+                IsQualityAssessmentEnabled = false;
+                Logger.Info("Quality Assessment setting file not found, using default: OFF");
+            } catch (Exception ex) {
+                Logger.Error($"Error loading Quality Assessment setting: {ex.Message}");
+                IsQualityAssessmentEnabled = false;
+            }
+        }
+
+        private void SaveQualityAssessmentSetting() {
+            try {
+                // Save to simple text file
+                var directory = System.IO.Path.GetDirectoryName(SettingsFilePath);
+                if (!System.IO.Directory.Exists(directory)) {
+                    System.IO.Directory.CreateDirectory(directory);
+                }
+
+                System.IO.File.WriteAllText(SettingsFilePath, IsQualityAssessmentEnabled.ToString());
+                Logger.Info($"Quality Assessment setting saved to file: {IsQualityAssessmentEnabled}");
+            } catch (Exception ex) {
+                Logger.Error($"Error saving Quality Assessment setting: {ex.Message}");
+            }
+        }
+
+        #endregion
+
         #region Properties - Quality Metrics
 
         private DitherQualityMetrics.QualityResult _qualityResult;
@@ -289,6 +388,7 @@ namespace DitherStatistics.Plugin {
                 _qualityResult = value;
                 RaisePropertyChanged();
                 RaisePropertyChanged(nameof(HasQualityData));
+                RaisePropertyChanged(nameof(ShowQualityAssessment));
                 RaisePropertyChanged(nameof(QualityRatingColor));
                 RaisePropertyChanged(nameof(CDValue));
                 RaisePropertyChanged(nameof(CDRating));
@@ -670,6 +770,9 @@ namespace DitherStatistics.Plugin {
                 // Clear plot
                 PixelShiftPlot.Plot.Clear();
 
+                // Update colors dynamically (in case theme changed)
+                UpdateChartColors(PixelShiftPlot);
+
                 if (pixelShiftValues.Count == 0) {
                     PixelShiftPlot.Render();
                     return;
@@ -718,9 +821,10 @@ namespace DitherStatistics.Plugin {
                     lastPoint.Label = "Latest";
                 }
 
-                // Add crosshair at origin
-                PixelShiftPlot.Plot.AddVerticalLine(0, System.Drawing.Color.White, 2);
-                PixelShiftPlot.Plot.AddHorizontalLine(0, System.Drawing.Color.White, 2);
+                // Add crosshair at origin with dynamic color
+                var primaryColor = GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
+                PixelShiftPlot.Plot.AddVerticalLine(0, primaryColor, 2);
+                PixelShiftPlot.Plot.AddHorizontalLine(0, primaryColor, 2);
 
                 // Auto-scale and refresh
                 PixelShiftPlot.Plot.AxisAuto();
@@ -737,6 +841,9 @@ namespace DitherStatistics.Plugin {
 
                 // Clear plot
                 SettleTimePlot.Plot.Clear();
+
+                // Update colors dynamically (in case theme changed)
+                UpdateChartColors(SettleTimePlot);
 
                 if (settleTimeValues.Count == 0) {
                     SettleTimePlot.Render();
@@ -1044,6 +1151,14 @@ namespace DitherStatistics.Plugin {
 
         public void Dispose() {
             try {
+                // Stop theme color monitoring timer
+                if (themeColorTimer != null) {
+                    themeColorTimer.Tick -= OnThemeColorTimerTick;
+                    themeColorTimer.Stop();
+                    themeColorTimer = null;
+                    Logger.Info("Theme color monitoring timer stopped");
+                }
+
                 phd2Client?.Dispose();
 
                 if (guiderMediator != null) {
@@ -1057,6 +1172,127 @@ namespace DitherStatistics.Plugin {
             } catch (Exception ex) {
                 Logger.Error($"Error disposing: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Start monitoring theme color changes to update charts dynamically
+        /// Checks every 500ms if PrimaryBrush color has changed
+        /// </summary>
+        private void StartThemeColorMonitoring() {
+            try {
+                // Initialize last color
+                lastPrimaryColor = GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
+                Logger.Info($"Initial PrimaryBrush color: R:{lastPrimaryColor.R} G:{lastPrimaryColor.G} B:{lastPrimaryColor.B}");
+
+                // Use Application.Current.Dispatcher to ensure we're on UI thread
+                Application.Current.Dispatcher.BeginInvoke(new Action(() => {
+                    try {
+                        themeColorTimer = new System.Windows.Threading.DispatcherTimer();
+                        themeColorTimer.Interval = TimeSpan.FromMilliseconds(500);
+                        themeColorTimer.Tick += OnThemeColorTimerTick;
+                        themeColorTimer.Start();
+                        Logger.Info("Theme color monitoring timer started on UI thread");
+                    } catch (Exception ex) {
+                        Logger.Error($"Failed to start timer on UI thread: {ex.Message}");
+                    }
+                }));
+            } catch (Exception ex) {
+                Logger.Error($"Failed to start theme color monitoring: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Timer tick handler for theme color monitoring
+        /// </summary>
+        private void OnThemeColorTimerTick(object sender, EventArgs e) {
+            try {
+                var currentPrimaryColor = GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
+
+                // Check if color changed
+                if (currentPrimaryColor.ToArgb() != lastPrimaryColor.ToArgb()) {
+                    Logger.Info($"Theme color CHANGED! Old: R:{lastPrimaryColor.R} G:{lastPrimaryColor.G} B:{lastPrimaryColor.B} -> New: R:{currentPrimaryColor.R} G:{currentPrimaryColor.G} B:{currentPrimaryColor.B}");
+                    lastPrimaryColor = currentPrimaryColor;
+
+                    // Update both charts immediately
+                    Application.Current.Dispatcher.BeginInvoke(new Action(() => {
+                        try {
+                            if (PixelShiftPlot != null) {
+                                Logger.Debug("Updating PixelShiftPlot colors...");
+                                UpdateChartColors(PixelShiftPlot);
+                                PixelShiftPlot.Render();
+                            }
+                            if (SettleTimePlot != null) {
+                                Logger.Debug("Updating SettleTimePlot colors...");
+                                UpdateChartColors(SettleTimePlot);
+                                SettleTimePlot.Render();
+                            }
+                        } catch (Exception ex) {
+                            Logger.Error($"Error updating charts after color change: {ex.Message}");
+                        }
+                    }));
+                }
+            } catch (Exception ex) {
+                Logger.Error($"Error in theme color monitoring tick: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Update chart axis, grid, and tick colors to match current theme
+        /// Called every time charts are updated to ensure colors stay in sync with theme
+        /// </summary>
+        private void UpdateChartColors(ScottPlot.WpfPlot plot) {
+            try {
+                var primaryColor = GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
+
+                // Set axis label colors
+                plot.Plot.XAxis.LabelStyle(color: primaryColor);
+                plot.Plot.YAxis.LabelStyle(color: primaryColor);
+
+                // Set axis, grid, and tick colors
+                plot.Plot.XAxis.Color(primaryColor);
+                plot.Plot.YAxis.Color(primaryColor);
+                plot.Plot.XAxis.TickLabelStyle(color: primaryColor);
+                plot.Plot.YAxis.TickLabelStyle(color: primaryColor);
+                plot.Plot.Grid(color: System.Drawing.Color.FromArgb(50, primaryColor.R, primaryColor.G, primaryColor.B));
+            } catch (Exception ex) {
+                Logger.Warning($"Error updating chart colors: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Helper method to get NINA theme color from dynamic resource
+        /// Converts WPF SolidColorBrush to System.Drawing.Color for ScottPlot
+        /// </summary>
+        private System.Drawing.Color GetThemeColor(string resourceKey, System.Drawing.Color fallback) {
+            try {
+                // Try to get from Application resources first
+                if (Application.Current?.Resources[resourceKey] is SolidColorBrush brush) {
+                    var wpfColor = brush.Color;
+                    var color = System.Drawing.Color.FromArgb(wpfColor.A, wpfColor.R, wpfColor.G, wpfColor.B);
+                    Logger.Debug($"GetThemeColor('{resourceKey}'): Found Brush - R:{color.R} G:{color.G} B:{color.B} A:{color.A}");
+                    return color;
+                }
+
+                // Try to get Color directly (some resources might be Color instead of Brush)
+                if (Application.Current?.Resources[resourceKey] is System.Windows.Media.Color wpfColor2) {
+                    var color = System.Drawing.Color.FromArgb(wpfColor2.A, wpfColor2.R, wpfColor2.G, wpfColor2.B);
+                    Logger.Debug($"GetThemeColor('{resourceKey}'): Found Color - R:{color.R} G:{color.G} B:{color.B} A:{color.A}");
+                    return color;
+                }
+
+                // Try MainWindow resources if available
+                if (Application.Current?.MainWindow?.Resources[resourceKey] is SolidColorBrush brush2) {
+                    var wpfColor = brush2.Color;
+                    var color = System.Drawing.Color.FromArgb(wpfColor.A, wpfColor.R, wpfColor.G, wpfColor.B);
+                    Logger.Debug($"GetThemeColor('{resourceKey}'): Found in MainWindow Brush - R:{color.R} G:{color.G} B:{color.B} A:{color.A}");
+                    return color;
+                }
+
+                Logger.Warning($"GetThemeColor('{resourceKey}'): Resource not found, using fallback R:{fallback.R} G:{fallback.G} B:{fallback.B}");
+            } catch (Exception ex) {
+                Logger.Error($"Failed to get theme color '{resourceKey}': {ex.Message}");
+            }
+            return fallback;
         }
 
         /// <summary>
