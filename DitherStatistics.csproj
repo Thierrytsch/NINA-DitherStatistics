@@ -17,9 +17,9 @@
 	<!-- ZENTRALE VERSION - NUR HIER ÄNDERN! -->
 	<!-- ============================================ -->
 	<PropertyGroup>
-		<Version>1.2.0.0</Version>
-		<AssemblyVersion>1.2.0.0</AssemblyVersion>
-		<FileVersion>1.2.0.0</FileVersion>
+		<Version>1.2.0.1</Version>
+		<AssemblyVersion>1.2.0.1</AssemblyVersion>
+		<FileVersion>1.2.0.1</FileVersion>
 	</PropertyGroup>
 
 	<!-- ============================================ -->
@@ -62,7 +62,7 @@
 
 		<!-- Screenshots/Images (optional, URLs eintragen wenn vorhanden) -->
 		<AssemblyMetadata Include="FeaturedImageURL" Value="https://raw.githubusercontent.com/Thierrytsch/NINA-DitherStatistics/main/DitherStatistics-Logo.png" />
-		<AssemblyMetadata Include="ScreenshotURL" Value="https://github.com/Thierrytsch/NINA-DitherStatistics/releases/download/v1.2.0.0/screenshot-main.png" />
+		<AssemblyMetadata Include="ScreenshotURL" Value="https://github.com/Thierrytsch/NINA-DitherStatistics/releases/download/v1.2.0.1/screenshot-main.png" />
 
 		<!-- Long Description -->
 		<AssemblyMetadata Include="LongDescription" Value="Comprehensive dithering analysis plugin for N.I.N.A. with real-time statistics, visual charts, and experimental quality assessment.

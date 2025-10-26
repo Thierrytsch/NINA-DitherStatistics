@@ -47,6 +47,14 @@ namespace DitherStatistics.Plugin {
             Title = "Dither Statistics";
             ContentId = "DitherStatistics_Panel";
 
+            // Set Icon Geometry for the toggle button in NINA's Image area
+            // Must be created on UI thread
+            if (Application.Current != null) {
+                Application.Current.Dispatcher.Invoke(() => {
+                    ImageGeometry = CreatePluginIcon();
+                });
+            }
+
             // ✅ Load DataTemplates HIER im ViewModel (nicht im Plugin!)
             LoadDataTemplates();
 
@@ -1138,7 +1146,9 @@ namespace DitherStatistics.Plugin {
         public ICommand ToggleSettingsCommand => new CommunityToolkit.Mvvm.Input.RelayCommand<object>(ToggleSettings);
 
         public void Hide(object parameter) {
-            IsVisible = false;
+            // Toggle visibility instead of just hiding
+            // This allows the icon button to show/hide the panel
+            IsVisible = !IsVisible;
         }
 
         public void ToggleSettings(object parameter) {
@@ -1308,6 +1318,42 @@ namespace DitherStatistics.Plugin {
                 Logger.Info("DitherStatistics DataTemplates loaded successfully");
             } catch (Exception ex) {
                 Logger.Error($"Failed to load DataTemplates: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Creates the plugin icon for the toggle button in NINA's Image area
+        /// Icon: A simple chart/statistics symbol
+        /// </summary>
+        private GeometryGroup CreatePluginIcon() {
+            try {
+                var geometryGroup = new GeometryGroup();
+
+                // Create a simple chart icon with bars
+                // Bar 1 (short)
+                var bar1 = new RectangleGeometry(new Rect(2, 12, 3, 8));
+                geometryGroup.Children.Add(bar1);
+
+                // Bar 2 (medium)
+                var bar2 = new RectangleGeometry(new Rect(7, 8, 3, 12));
+                geometryGroup.Children.Add(bar2);
+
+                // Bar 3 (tall)
+                var bar3 = new RectangleGeometry(new Rect(12, 4, 3, 16));
+                geometryGroup.Children.Add(bar3);
+
+                // Bar 4 (medium-tall)
+                var bar4 = new RectangleGeometry(new Rect(17, 6, 3, 14));
+                geometryGroup.Children.Add(bar4);
+
+                Logger.Info("Plugin icon geometry created successfully");
+                return geometryGroup;
+            } catch (Exception ex) {
+                Logger.Error($"Failed to create plugin icon: {ex.Message}");
+                // Return a simple fallback circle if creation fails
+                var fallbackGroup = new GeometryGroup();
+                fallbackGroup.Children.Add(new EllipseGeometry(new Point(10, 10), 8, 8));
+                return fallbackGroup;
             }
         }
 

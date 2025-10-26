@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/surfer/AppData/Local/NINA/Profiles/**)",
+      "Read(//c/Users/surfer/AppData/Local/NINA/**)",
+      "Read(//c/Users/surfer/source/repos/NINA-Plugin/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

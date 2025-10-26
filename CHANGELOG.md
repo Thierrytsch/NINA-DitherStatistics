@@ -14,3 +14,6 @@
 
 ## 1.2.0.0
 - Added support for N.I.N.A 3.2 and look and feel improvements
+
+## 1.2.0.1
+- Bugfixes
