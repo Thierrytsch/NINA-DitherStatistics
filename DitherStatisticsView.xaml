@@ -195,7 +195,7 @@
                             </Border>
                         </Grid>
 
-                        <!-- Legend unter dem Chart -->
+                        <!-- Legend below the chart -->
                         <StackPanel Orientation="Horizontal" 
                                    HorizontalAlignment="Center" 
                                    Margin="0,8,0,0">
@@ -263,7 +263,7 @@
                     </StackPanel>
                 </Border>
 
-                <!-- KOMPAKTE Statistics Panel - 2 Zeilen -->
+                <!-- COMPACT Statistics Panel - 2 rows -->
                 <Border Background="{DynamicResource SecondaryBackgroundBrush}" 
                        BorderBrush="{DynamicResource BorderBrush}" 
                        BorderThickness="1" 
@@ -286,7 +286,7 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
 
-                            <!-- Zeile 1: Dithers (volle Breite) -->
+                            <!-- Row 1: Dithers (full width) -->
                             <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" 
                                       Margin="0,0,0,6">
                                 <Run Text="Dithers: " Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
@@ -305,7 +305,7 @@
                                 </Run>
                             </TextBlock>
 
-                            <!-- Zeile 2, Links: Median -->
+                            <!-- Row 2, Left: Median -->
                             <TextBlock Grid.Row="1" Grid.Column="0" 
                                       Margin="0,0,10,0">
                                 <Run Text="Median: " Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
@@ -332,7 +332,7 @@
                                 </Run>
                             </TextBlock>
 
-                            <!-- Zeile 2, Rechts: Drift -->
+                            <!-- Row 2, Right: Drift -->
                             <TextBlock Grid.Row="1" Grid.Column="1">
                                 <Run Text="Drift: X: " Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
                                 <Run Text="{Binding TotalDriftX, StringFormat='{}{0:F2}px', Mode=OneWay}" 
@@ -353,7 +353,7 @@
                        Margin="0,0,0,10"
                        Visibility="{Binding ShowQualityAssessment, Converter={StaticResource BoolToVis}, Mode=OneWay}">
                     <StackPanel>
-                        <!-- Header with Overall Rating und EXPERIMENTAL Badge -->
+                        <!-- Header with Overall Rating and EXPERIMENTAL Badge -->
                         <Grid Margin="0,0,0,15">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -361,7 +361,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
-                            <!-- Title mit Experimental Badge -->
+                            <!-- Title with Experimental Badge -->
                             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="📊 Dither Quality Assessment"
                                           FontSize="14"

@@ -8,13 +8,12 @@
 		<UseWPF>true</UseWPF>
 		<PlatformTarget>x64</PlatformTarget>
 
-		<!-- ✅ WICHTIG: Auf true setzen, damit Properties unten verwendet werden! -->
 		<GenerateAssemblyInfo>true</GenerateAssemblyInfo>
 		<Deterministic>true</Deterministic>
 	</PropertyGroup>
 
 	<!-- ============================================ -->
-	<!-- ZENTRALE VERSION - NUR HIER ÄNDERN! -->
+	<!-- CENTRAL VERSION - ONLY CHANGE HERE! -->
 	<!-- ============================================ -->
 	<PropertyGroup>
 		<Version>1.2.0.2</Version>
@@ -23,7 +22,7 @@
 	</PropertyGroup>
 
 	<!-- ============================================ -->
-	<!-- PLUGIN METADATEN (aus AssemblyInfo.cs) -->
+	<!-- PLUGIN METADATEN -->
 	<!-- ============================================ -->
 	<PropertyGroup>
 		<!-- Basic Info -->
@@ -34,7 +33,8 @@
 		<Authors>Thierry Tschanz</Authors>
 		<Copyright>Copyright © 2025 Thierry Tschanz</Copyright>
 
-		<!-- GUID - NIEMALS ÄNDERN! -->
+		<!-- GUID - NEVER CHANGE! -->
+		<!-- GUID is defined in AssemblyInfo.cs -->
 		<!-- <Guid>8622888a-ac8c-48f0-9be8-40d5d123fb7d</Guid> -->
 
 		<!-- COM Interop -->
@@ -60,7 +60,7 @@
 		<!-- Tags -->
 		<AssemblyMetadata Include="Tags" Value="imaging,guiding,dithering,statistics,phd2,quality,analysis" />
 
-		<!-- Screenshots/Images (optional, URLs eintragen wenn vorhanden) -->
+		<!-- Screenshots/Images -->
 		<AssemblyMetadata Include="FeaturedImageURL" Value="https://raw.githubusercontent.com/Thierrytsch/NINA-DitherStatistics/main/DitherStatistics-Logo.png" />
 		<AssemblyMetadata Include="ScreenshotURL" Value="https://github.com/Thierrytsch/NINA-DitherStatistics/releases/download/v1.2.0.1/screenshot-main.png" />
 
@@ -109,21 +109,19 @@ For complete documentation, algorithms, and detailed explanations, see the full 
 	<!-- DEPENDENCIES -->
 	<!-- ============================================ -->
 	<ItemGroup>
-		<!-- CommunityToolkit - wird von NINA bereitgestellt -->
+		<!-- CommunityToolkit - from NINA -->
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2">
 			<PrivateAssets>all</PrivateAssets>
 			<ExcludeAssets>runtime</ExcludeAssets>
 		</PackageReference>
 
-		<!-- ✅ ScottPlot - BEIDE Packages explizit referenzieren! -->
+		<!-- ✅ ScottPlot -->
 		<PackageReference Include="ScottPlot" Version="4.1.74">
-			<!-- Keine ExcludeAssets - soll kopiert werden -->
 		</PackageReference>
 		<PackageReference Include="ScottPlot.WPF" Version="4.1.74">
-			<!-- Keine ExcludeAssets - soll kopiert werden -->
 		</PackageReference>
 
-		<!-- NINA Dependencies - Nicht kopieren! -->
+		<!-- NINA Dependencies - Do not copy! -->
 		<PackageReference Include="NINA.Core" Version="3.1.2.9001">
 			<PrivateAssets>all</PrivateAssets>
 			<ExcludeAssets>runtime</ExcludeAssets>
@@ -146,62 +144,62 @@ For complete documentation, algorithms, and detailed explanations, see the full 
 	<!-- FILES TO EMBED -->
 	<!-- ============================================ -->
 	<ItemGroup>
-		<!-- XAML DataTemplates als Resource in DLL embedden -->
+		<!-- XAML DataTemplates embed as DLL -->
 		<Resource Include="DitherStatisticsDataTemplates.xaml" />
 	</ItemGroup>
 
 	<!-- ============================================ -->
-	<!-- PRE-BUILD: ScottPlot DLLs aus NuGet holen -->
+	<!-- PRE-BUILD: ScottPlot DLLs get from NuGet -->
 	<!-- ============================================ -->
 	<Target Name="CopyScottPlotDlls" BeforeTargets="Build">
-		<!-- Finde alle möglichen ScottPlot 4.1.74 DLLs -->
+		<!-- Find ScottPlot 4.1.74 DLLs -->
 		<ItemGroup>
 			<ScottPlot4_1_74 Include="$(NuGetPackageRoot)scottplot\4.1.74\**\ScottPlot.dll" />
 			<ScottPlotWPF4_1_74 Include="$(NuGetPackageRoot)scottplot.wpf\4.1.74\**\ScottPlot.WPF.dll" />
 		</ItemGroup>
 
-		<!-- Nimm die ERSTE gefundene (sollte die richtige sein) -->
+		<!-- Find first (should be the right one) -->
 		<PropertyGroup>
 			<ScottPlotDll>@(ScottPlot4_1_74->'%(FullPath)')</ScottPlotDll>
 			<ScottPlotWPFDll>@(ScottPlotWPF4_1_74->'%(FullPath)')</ScottPlotWPFDll>
 		</PropertyGroup>
 
-		<!-- Schneide auf erstes Element (falls mehrere gefunden) -->
+		<!-- Cut to first (if more than one found) -->
 		<PropertyGroup>
 			<ScottPlotDll>$(ScottPlotDll.Split(';')[0])</ScottPlotDll>
 			<ScottPlotWPFDll>$(ScottPlotWPFDll.Split(';')[0])</ScottPlotWPFDll>
 		</PropertyGroup>
 
-		<!-- Debug-Ausgabe -->
+		<!-- Debug-Output -->
 		<Message Text="Found ScottPlot.dll at: $(ScottPlotDll)" Importance="high" />
 		<Message Text="Found ScottPlot.WPF.dll at: $(ScottPlotWPFDll)" Importance="high" />
 
-		<!-- Fehler wenn nicht gefunden -->
+		<!-- Error when not found -->
 		<Error Text="ScottPlot.dll 4.1.74 not found! Expected at: $(NuGetPackageRoot)scottplot\4.1.74\lib\" Condition="'$(ScottPlotDll)' == '' OR !Exists('$(ScottPlotDll)')" />
 		<Error Text="ScottPlot.WPF.dll 4.1.74 not found! Expected at: $(NuGetPackageRoot)scottplot.wpf\4.1.74\lib\" Condition="'$(ScottPlotWPFDll)' == '' OR !Exists('$(ScottPlotWPFDll)')" />
 
-		<!-- Kopiere DLLs -->
+		<!-- Copy DLLs -->
 		<Copy SourceFiles="$(ScottPlotDll)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
 		<Copy SourceFiles="$(ScottPlotWPFDll)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
 	</Target>
 
 	<!-- ============================================ -->
-	<!-- POST-BUILD: Zu NINA kopieren -->
+	<!-- POST-BUILD: Copy to NINA -->
 	<!-- ============================================ -->
 	<Target Name="PostBuild" AfterTargets="Build">
-		<!-- Erstelle Plugin-Ordner (mit Unterverzeichnissen falls nötig) -->
+		<!-- Create Plugin-Folder (with Subdirectorys if neccessary) -->
 		<MakeDir Directories="$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics" ContinueOnError="true" />
 
-		<!-- Kopiere Plugin-DLL -->
+		<!-- Copy Plugin-DLL -->
 		<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics" SkipUnchangedFiles="true" />
 
-		<!-- Kopiere PDB (optional, für Debugging) -->
+		<!-- Copy PDB (optional, for debugging) -->
 		<Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics" SkipUnchangedFiles="true" ContinueOnError="true" />
 
-		<!-- Kopiere deps.json -->
+		<!-- Copy deps.json -->
 		<Copy SourceFiles="$(TargetDir)$(TargetName).deps.json" DestinationFolder="$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics" SkipUnchangedFiles="true" ContinueOnError="true" />
 
-		<!-- Kopiere ScottPlot DLLs (falls vorhanden) -->
+		<!-- Copy ScottPlot DLLs (if available) -->
 		<Copy SourceFiles="$(TargetDir)ScottPlot.dll" DestinationFolder="$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)ScottPlot.dll')" />
 		<Copy SourceFiles="$(TargetDir)ScottPlot.WPF.dll" DestinationFolder="$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)ScottPlot.WPF.dll')" />
 	</Target>

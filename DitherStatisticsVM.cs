@@ -20,7 +20,7 @@ namespace DitherStatistics.Plugin {
     /// <summary>
     /// ViewModel for Dither Statistics Panel with PHD2 direct integration
     /// Migrated from LiveCharts to ScottPlot 4.1.x for NINA 3.1 + 3.2 compatibility
-    /// Dateiname: DitherStatisticsVM.cs
+    /// Filename: DitherStatisticsVM.cs
     /// </summary>
     [Export(typeof(IDockableVM))]
     public partial class DitherStatisticsVM : BaseINPC, IDockableVM, IGuiderConsumer {
@@ -260,7 +260,7 @@ namespace DitherStatistics.Plugin {
             }
         }
 
-        // Total Drift Properties - Spannweite der Verteilung
+        // Total Drift Properties - Range of distribution
         private double totalDriftX;
         public double TotalDriftX {
             get => totalDriftX;
@@ -443,7 +443,7 @@ namespace DitherStatistics.Plugin {
             ? $"{QualityResult.GapFillMetric_3x:P1}"
             : "N/A";
 
-        // Target Coverage für Gap-Fill Metrics (using centralized thresholds)
+        // Target Coverage for Gap-Fill Metrics (using centralized thresholds)
         public string GFM1xTarget => $"Target: {DitherQualityMetrics.QualityThresholds.GFM_Target_1x:P0}";
         public string GFM2xTarget => $"Target: {DitherQualityMetrics.QualityThresholds.GFM_Target_2x:P0}";
         public string GFM3xTarget => $"Target: {DitherQualityMetrics.QualityThresholds.GFM_Target_3x:P0}";
@@ -1052,7 +1052,7 @@ namespace DitherStatistics.Plugin {
                 StdDevSettleTime = 0;
             }
 
-            // Calculate Total Drift as Spannweite (Max - Min) über alle Punkte
+            // Calculate Total Drift as range (Max - Min) across all points
             if (pixelShiftValues.Count > 0) {
                 var xValues = pixelShiftValues.Select(p => p.X).ToList();
                 var yValues = pixelShiftValues.Select(p => p.Y).ToList();
