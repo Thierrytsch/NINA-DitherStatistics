@@ -20,3 +20,6 @@
 
 ## 1.2.0.2
 - Bugfixes
+
+## 1.2.0.3
+- Compatibility with other plugins

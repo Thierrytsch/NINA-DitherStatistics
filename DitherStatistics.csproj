@@ -16,9 +16,9 @@
 	<!-- CENTRAL VERSION - ONLY CHANGE HERE! -->
 	<!-- ============================================ -->
 	<PropertyGroup>
-		<Version>1.2.0.2</Version>
-		<AssemblyVersion>1.2.0.2</AssemblyVersion>
-		<FileVersion>1.2.0.2</FileVersion>
+		<Version>1.2.0.3</Version>
+		<AssemblyVersion>1.2.0.3</AssemblyVersion>
+		<FileVersion>1.2.0.3</FileVersion>
 	</PropertyGroup>
 
 	<!-- ============================================ -->
@@ -116,9 +116,9 @@ For complete documentation, algorithms, and detailed explanations, see the full 
 		</PackageReference>
 
 		<!-- ✅ ScottPlot -->
-		<PackageReference Include="ScottPlot" Version="4.1.74">
+		<PackageReference Include="ScottPlot" Version="4.1.59">
 		</PackageReference>
-		<PackageReference Include="ScottPlot.WPF" Version="4.1.74">
+		<PackageReference Include="ScottPlot.WPF" Version="4.1.59">
 		</PackageReference>
 
 		<!-- NINA Dependencies - Do not copy! -->
@@ -152,10 +152,10 @@ For complete documentation, algorithms, and detailed explanations, see the full 
 	<!-- PRE-BUILD: ScottPlot DLLs get from NuGet -->
 	<!-- ============================================ -->
 	<Target Name="CopyScottPlotDlls" BeforeTargets="Build">
-		<!-- Find ScottPlot 4.1.74 DLLs -->
+		<!-- Find ScottPlot 4.1.59 DLLs -->
 		<ItemGroup>
-			<ScottPlot4_1_74 Include="$(NuGetPackageRoot)scottplot\4.1.74\**\ScottPlot.dll" />
-			<ScottPlotWPF4_1_74 Include="$(NuGetPackageRoot)scottplot.wpf\4.1.74\**\ScottPlot.WPF.dll" />
+			<ScottPlot4_1_74 Include="$(NuGetPackageRoot)scottplot\4.1.59\**\ScottPlot.dll" />
+			<ScottPlotWPF4_1_74 Include="$(NuGetPackageRoot)scottplot.wpf\4.1.59\**\ScottPlot.WPF.dll" />
 		</ItemGroup>
 
 		<!-- Find first (should be the right one) -->
@@ -175,8 +175,8 @@ For complete documentation, algorithms, and detailed explanations, see the full 
 		<Message Text="Found ScottPlot.WPF.dll at: $(ScottPlotWPFDll)" Importance="high" />
 
 		<!-- Error when not found -->
-		<Error Text="ScottPlot.dll 4.1.74 not found! Expected at: $(NuGetPackageRoot)scottplot\4.1.74\lib\" Condition="'$(ScottPlotDll)' == '' OR !Exists('$(ScottPlotDll)')" />
-		<Error Text="ScottPlot.WPF.dll 4.1.74 not found! Expected at: $(NuGetPackageRoot)scottplot.wpf\4.1.74\lib\" Condition="'$(ScottPlotWPFDll)' == '' OR !Exists('$(ScottPlotWPFDll)')" />
+		<Error Text="ScottPlot.dll 4.1.59 not found! Expected at: $(NuGetPackageRoot)scottplot\4.1.59\lib\" Condition="'$(ScottPlotDll)' == '' OR !Exists('$(ScottPlotDll)')" />
+		<Error Text="ScottPlot.WPF.dll 4.1.59 not found! Expected at: $(NuGetPackageRoot)scottplot.wpf\4.1.59\lib\" Condition="'$(ScottPlotWPFDll)' == '' OR !Exists('$(ScottPlotWPFDll)')" />
 
 		<!-- Copy DLLs -->
 		<Copy SourceFiles="$(ScottPlotDll)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
