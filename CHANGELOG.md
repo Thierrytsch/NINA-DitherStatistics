@@ -23,3 +23,6 @@
 
 ## 1.2.0.3
 - Compatibility with other plugins
+
+## 1.2.0.4
+- Bugfixes
