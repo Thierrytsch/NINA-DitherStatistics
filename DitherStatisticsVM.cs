@@ -30,6 +30,7 @@ namespace DitherStatistics.Plugin {
         private readonly PHD2Client phd2Client;
         private DitherEvent currentDither = null;
         private readonly Random random = new Random();
+        private bool hasLoggedConnectionFailure = false;
 
         // Theme color monitoring
         private System.Windows.Threading.DispatcherTimer themeColorTimer;
@@ -584,13 +585,21 @@ namespace DitherStatistics.Plugin {
 
         private async System.Threading.Tasks.Task ConnectToPHD2() {
             try {
-                Logger.Info("Attempting to connect to PHD2...");
+                // Only log connection attempt the first time
+                if (!hasLoggedConnectionFailure) {
+                    Logger.Info("Attempting to connect to PHD2...");
+                }
                 bool connected = await phd2Client.ConnectAsync();
 
                 if (connected) {
                     Logger.Info("Successfully connected to PHD2!");
+                    hasLoggedConnectionFailure = false; // Reset flag on successful connection
                 } else {
-                    Logger.Warning("Failed to connect to PHD2 - will retry later");
+                    // Only log warning the first time
+                    if (!hasLoggedConnectionFailure) {
+                        Logger.Warning("Failed to connect to PHD2 - will retry later");
+                        hasLoggedConnectionFailure = true;
+                    }
 
                     // Retry after 10 seconds
                     await System.Threading.Tasks.Task.Delay(10000);
@@ -602,7 +611,14 @@ namespace DitherStatistics.Plugin {
         }
 
         private void OnPHD2ConnectionStatusChanged(object sender, string status) {
-            Logger.Info($"PHD2 Connection Status: {status}");
+            // Only log connection status changes if it's a successful connection or the first failure
+            if (status.Contains("Connected") && !status.Contains("failed")) {
+                Logger.Info($"PHD2 Connection Status: {status}");
+                hasLoggedConnectionFailure = false; // Reset flag on successful connection
+            } else if (!hasLoggedConnectionFailure && (status.Contains("Connection failed") || status.Contains("Connection lost"))) {
+                Logger.Info($"PHD2 Connection Status: {status}");
+                hasLoggedConnectionFailure = true;
+            }
 
             // If disconnected, try to reconnect after delay
             if (status.Contains("Connection lost") || status.Contains("Disconnected")) {

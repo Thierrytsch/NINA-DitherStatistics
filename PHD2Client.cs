@@ -20,6 +20,7 @@ namespace DitherStatistics.Plugin {
         private readonly string host;
         private readonly int port;
         private bool isConnected;
+        private bool hasLoggedConnectionFailure;
 
         public event EventHandler<PHD2GuidingDitheredEventArgs> GuidingDithered;
         public event EventHandler<PHD2SettleDoneEventArgs> SettleDone;
@@ -42,7 +43,10 @@ namespace DitherStatistics.Plugin {
                     return true;
                 }
 
-                Logger.Info($"PHD2Client: Connecting to PHD2 at {host}:{port}...");
+                // Only log connection attempt the first time
+                if (!hasLoggedConnectionFailure) {
+                    Logger.Info($"PHD2Client: Connecting to PHD2 at {host}:{port}...");
+                }
 
                 client = new TcpClient();
                 await client.ConnectAsync(host, port);
@@ -50,6 +54,7 @@ namespace DitherStatistics.Plugin {
                 reader = new StreamReader(client.GetStream(), Encoding.UTF8);
                 cancellationTokenSource = new CancellationTokenSource();
                 isConnected = true;
+                hasLoggedConnectionFailure = false; // Reset flag on successful connection
 
                 // Start reading events in background
                 readTask = Task.Run(() => ReadEventsAsync(cancellationTokenSource.Token));
@@ -59,7 +64,11 @@ namespace DitherStatistics.Plugin {
                 return true;
 
             } catch (Exception ex) {
-                Logger.Error($"PHD2Client: Connection failed: {ex.Message}");
+                // Only log error the first time
+                if (!hasLoggedConnectionFailure) {
+                    Logger.Error($"PHD2Client: Connection failed: {ex.Message}");
+                    hasLoggedConnectionFailure = true;
+                }
                 isConnected = false;
                 ConnectionStatusChanged?.Invoke(this, $"Connection failed: {ex.Message}");
                 return false;
