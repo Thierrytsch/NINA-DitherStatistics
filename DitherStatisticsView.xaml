@@ -298,11 +298,7 @@
                                 <Run Text="/" Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
                                 <Run Text="{Binding SuccessRate, StringFormat='{}{0:F1}%', Mode=OneWay}" 
                                      Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
-                                <Run Text=" (Total/Success/Rate)" FontSize="11">
-                                    <Run.Foreground>
-                                        <SolidColorBrush Color="{DynamicResource ButtonForegroundDisabledColor}" Opacity="0.7"/>
-                                    </Run.Foreground>
-                                </Run>
+                                <Run Text=" (Total/Success/Rate)" FontSize="11" Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
                             </TextBlock>
 
                             <!-- Row 2, Left: Median -->
@@ -311,25 +307,13 @@
                                 <Run Text="Median: " Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
                                 <Run Text="{Binding MedianSettleTime, StringFormat='{}{0:F2}s', Mode=OneWay}" 
                                      Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
-                                <Run Text=", (Min: " FontSize="11">
-                                    <Run.Foreground>
-                                        <SolidColorBrush Color="{DynamicResource ButtonForegroundDisabledColor}" Opacity="0.7"/>
-                                    </Run.Foreground>
-                                </Run>
+                                <Run Text=", (Min: " FontSize="11" Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
                                 <Run Text="{Binding MinSettleTime, StringFormat='{}{0:F2}s', Mode=OneWay}" 
                                      Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold" FontSize="11"/>
-                                <Run Text=" / Max: " FontSize="11">
-                                    <Run.Foreground>
-                                        <SolidColorBrush Color="{DynamicResource ButtonForegroundDisabledColor}" Opacity="0.7"/>
-                                    </Run.Foreground>
-                                </Run>
+                                <Run Text=" / Max: " FontSize="11" Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
                                 <Run Text="{Binding MaxSettleTime, StringFormat='{}{0:F2}s', Mode=OneWay}" 
                                      Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold" FontSize="11"/>
-                                <Run Text=")" FontSize="11">
-                                    <Run.Foreground>
-                                        <SolidColorBrush Color="{DynamicResource ButtonForegroundDisabledColor}" Opacity="0.7"/>
-                                    </Run.Foreground>
-                                </Run>
+                                <Run Text=")" FontSize="11" Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
                             </TextBlock>
 
                             <!-- Row 2, Right: Drift -->

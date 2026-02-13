@@ -123,3 +123,4 @@ packages/
 ## Files
 *.cache
 *.log
+/nul
