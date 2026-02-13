@@ -64,16 +64,21 @@ namespace DitherStatistics.Plugin {
         }
 
         private readonly List<DitherDataPoint> allDitherData = new List<DitherDataPoint>();
+        private readonly object ditherDataLock = new object();  // Thread safety for allDitherData
         private List<DitherDataPoint> currentDitherSeries = new List<DitherDataPoint>();
         private DateTime ditherStartTime;
         private System.Timers.Timer ditherCollectionTimer;
         private bool isCollectingDitherData = false;
         private int ditherSeriesCounter = 0;  // Counter to identify dither series
 
+        // Stored results from AnalyzePositivePeriods for CalculateRecommendation
+        private Dictionary<double, Dictionary<int, PositivePeriod>> lastFirstPeriodPerSeriesAll;
+
         public event EventHandler<PHD2GuidingDitheredEventArgs> GuidingDithered;
         public event EventHandler<PHD2SettleDoneEventArgs> SettleDone;
         public event EventHandler<PHD2GuideStepEventArgs> GuideStep;
         public event EventHandler<string> ConnectionStatusChanged;
+        public event EventHandler<DitherSettingsRecommendation> DitherRecommendationUpdated;
 
         public bool IsConnected => isConnected && client?.Connected == true;
 
@@ -547,8 +552,13 @@ namespace DitherStatistics.Plugin {
                 }
 
                 // Add current series to all data (if not empty)
+                bool hadPreviousData = false;
                 if (currentDitherSeries.Count > 0) {
-                    allDitherData.AddRange(currentDitherSeries);
+                    lock (ditherDataLock) {
+                        allDitherData.AddRange(currentDitherSeries);
+                    }
+                    Logger.Info($"PHD2Client: Previous dither series added to allDitherData ({currentDitherSeries.Count} points, timer hadn't completed)");
+                    hadPreviousData = true;
                 }
 
                 // Start new series
@@ -563,10 +573,72 @@ namespace DitherStatistics.Plugin {
                 ditherCollectionTimer.AutoReset = false;
                 ditherCollectionTimer.Start();
 
-                Logger.Info("PHD2Client: Started dither data collection for 30 seconds");
+                Logger.Info($"PHD2Client: Started dither data collection for 30 seconds (series #{ditherSeriesCounter})");
+
+                // If we had previous data and the timer never fired, run analysis now
+                // This handles rapid dithering where dithers come faster than 30 seconds
+                if (hadPreviousData) {
+                    _ = System.Threading.Tasks.Task.Run(() => RunAnalysisAndRecommendation());
+                }
 
             } catch (Exception ex) {
                 Logger.Error($"PHD2Client: Error starting dither data collection: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Run analysis and recommendation calculation on accumulated data.
+        /// Called both from the 30-second timer and from StartDitherDataCollection
+        /// when rapid dithering prevents the timer from completing.
+        /// </summary>
+        private void RunAnalysisAndRecommendation() {
+            try {
+                List<DitherDataPoint> dataSnapshot;
+                lock (ditherDataLock) {
+                    dataSnapshot = new List<DitherDataPoint>(allDitherData);
+                }
+
+                if (dataSnapshot.Count == 0) {
+                    Logger.Info("PHD2Client: RunAnalysisAndRecommendation - no data yet");
+                    return;
+                }
+
+                // Calculate current RMS values
+                double runningRMS = 0;
+                double rmsStdDev = 0;
+
+                if (sessionDX.Count > 1) {
+                    double meanDX = sessionDX.Average();
+                    double sumSquaredDeviationsDX = sessionDX.Sum(d => Math.Pow(d - meanDX, 2));
+                    double raStdDev = Math.Sqrt(sumSquaredDeviationsDX / (sessionDX.Count - 1));
+
+                    double meanDY = sessionDY.Average();
+                    double sumSquaredDeviationsDY = sessionDY.Sum(d => Math.Pow(d - meanDY, 2));
+                    double decStdDev = Math.Sqrt(sumSquaredDeviationsDY / (sessionDY.Count - 1));
+
+                    runningRMS = Math.Sqrt(raStdDev * raStdDev + decStdDev * decStdDev);
+                }
+
+                if (sessionRMS.Count > 1) {
+                    double meanRMS = sessionRMS.Average();
+                    double sumSquaredDeviationsRMS = sessionRMS.Sum(r => Math.Pow(r - meanRMS, 2));
+                    rmsStdDev = Math.Sqrt(sumSquaredDeviationsRMS / (sessionRMS.Count - 1));
+                }
+
+                // Write analysis file
+                WriteDitherAnalysisFile(dataSnapshot, runningRMS, rmsStdDev);
+
+                // Analyze positive periods (stores results in lastFirstPeriodPerSeriesAll)
+                AnalyzePositivePeriods(dataSnapshot, runningRMS, rmsStdDev);
+
+                // Calculate and fire recommendation
+                CalculateRecommendation(dataSnapshot, lastFirstPeriodPerSeriesAll, runningRMS, rmsStdDev);
+
+                int totalSeries = dataSnapshot.Select(p => p.DitherSeriesId).Distinct().Count();
+                Logger.Info($"PHD2Client: RunAnalysisAndRecommendation completed - {dataSnapshot.Count} points, {totalSeries} series");
+
+            } catch (Exception ex) {
+                Logger.Error($"PHD2Client: Error in RunAnalysisAndRecommendation: {ex.Message}");
             }
         }
 
@@ -579,37 +651,11 @@ namespace DitherStatistics.Plugin {
 
                 // Add current series to all data
                 if (currentDitherSeries.Count > 0) {
-                    allDitherData.AddRange(currentDitherSeries);
-                    Logger.Info($"PHD2Client: Dither data collection complete. Collected {currentDitherSeries.Count} points in this series.");
+                    lock (ditherDataLock) {
+                        allDitherData.AddRange(currentDitherSeries);
+                    }
+                    Logger.Info($"PHD2Client: Dither data collection complete (timer). Collected {currentDitherSeries.Count} points.");
                 }
-
-                // Get current running RMS and RMS StdDev for analysis
-                double currentRunningRMS = 0;
-                double currentRMSStdDev = 0;
-
-                if (sessionDX.Count > 1) {
-                    double meanDX = sessionDX.Average();
-                    double sumSquaredDeviationsDX = sessionDX.Sum(d => Math.Pow(d - meanDX, 2));
-                    double raStdDev = Math.Sqrt(sumSquaredDeviationsDX / (sessionDX.Count - 1));
-
-                    double meanDY = sessionDY.Average();
-                    double sumSquaredDeviationsDY = sessionDY.Sum(d => Math.Pow(d - meanDY, 2));
-                    double decStdDev = Math.Sqrt(sumSquaredDeviationsDY / (sessionDY.Count - 1));
-
-                    currentRunningRMS = Math.Sqrt(raStdDev * raStdDev + decStdDev * decStdDev);
-                }
-
-                if (sessionRMS.Count > 1) {
-                    double meanRMS = sessionRMS.Average();
-                    double sumSquaredDeviationsRMS = sessionRMS.Sum(r => Math.Pow(r - meanRMS, 2));
-                    currentRMSStdDev = Math.Sqrt(sumSquaredDeviationsRMS / (sessionRMS.Count - 1));
-                }
-
-                // Recalculate analysis for ALL collected data and write to file
-                WriteDitherAnalysisFile(currentRunningRMS, currentRMSStdDev);
-
-                // Analyze positive periods bounded by negative values for each dither series
-                AnalyzePositivePeriods(currentRunningRMS, currentRMSStdDev);
 
                 // Clear current series
                 currentDitherSeries.Clear();
@@ -617,6 +663,9 @@ namespace DitherStatistics.Plugin {
             } catch (Exception ex) {
                 Logger.Error($"PHD2Client: Error in dither collection complete: {ex.Message}");
             }
+
+            // Run analysis and recommendation on accumulated data
+            RunAnalysisAndRecommendation();
         }
 
         /// <summary>
@@ -624,9 +673,9 @@ namespace DitherStatistics.Plugin {
         /// Format: Header with running_RMS and RMS_StdDev, then data lines with dx, dy, PairRMS, and multiple AnalysisValues
         /// AnalysisValue_X = running_RMS + X*RMS_StdDev - PairRMS (for each multiplier)
         /// </summary>
-        private void WriteDitherAnalysisFile(double runningRMS, double rmsStdDev) {
+        private void WriteDitherAnalysisFile(List<DitherDataPoint> data, double runningRMS, double rmsStdDev) {
             try {
-                if (allDitherData.Count == 0) {
+                if (data.Count == 0) {
                     Logger.Info("PHD2Client: No dither data to write");
                     return;
                 }
@@ -671,7 +720,7 @@ namespace DitherStatistics.Plugin {
                     writer.WriteLine(header);
 
                     // Write all data points with analysis values for each multiplier
-                    foreach (var point in allDitherData) {
+                    foreach (var point in data) {
                         string line = $"{point.DitherSeriesId},{point.DX:F4},{point.DY:F4},{point.PairRMS:F4}";
 
                         // Add analysis value for each multiplier
@@ -686,7 +735,7 @@ namespace DitherStatistics.Plugin {
                     }
                 }
 
-                Logger.Info($"PHD2Client: Dither analysis file written with {allDitherData.Count} data points: {fileName}");
+                Logger.Info($"PHD2Client: Dither analysis file written with {data.Count} data points: {fileName}");
 
             } catch (Exception ex) {
                 Logger.Error($"PHD2Client: Error writing dither analysis file: {ex.Message}");
@@ -700,18 +749,21 @@ namespace DitherStatistics.Plugin {
         /// If series ends with positive values, those are NOT counted (no negative value after)
         /// For each dither series, only the longest valid period is kept
         /// </summary>
-        private void AnalyzePositivePeriods(double runningRMS, double rmsStdDev) {
+        private void AnalyzePositivePeriods(List<DitherDataPoint> data, double runningRMS, double rmsStdDev) {
             try {
-                if (allDitherData.Count == 0) {
+                if (data.Count == 0) {
                     Logger.Info("PHD2Client: No dither data to analyze for positive periods");
                     return;
                 }
 
-                // Group data by DitherSeriesId once
-                var seriesGroups = allDitherData.GroupBy(p => p.DitherSeriesId).OrderBy(g => g.Key);
+                // Group data by DitherSeriesId once (using snapshot, not shared list)
+                var seriesGroups = data.GroupBy(p => p.DitherSeriesId).OrderBy(g => g.Key);
 
                 // Store positive periods for each multiplier
                 var allPositivePeriods = new Dictionary<double, List<PositivePeriod>>();
+
+                // Track first positive period per series per multiplier (for MinSettleTime calculation)
+                var firstPeriodPerSeriesAll = new Dictionary<double, Dictionary<int, PositivePeriod>>();
 
                 // Analyze for each multiplier
                 foreach (double multiplier in RMS_MULTIPLIERS) {
@@ -719,6 +771,7 @@ namespace DitherStatistics.Plugin {
                     var positivePeriods = new List<PositivePeriod>();
                     var seriesWithPeriods = new HashSet<int>();  // Track which series have valid periods
                     var periodsPerSeries = new Dictionary<int, List<PositivePeriod>>();  // Collect all periods per series
+                    var firstPeriodPerSeries = new Dictionary<int, PositivePeriod>();  // First positive period per series
 
                     foreach (var series in seriesGroups) {
                         var points = series.OrderBy(p => p.Timestamp).ToList();
@@ -765,6 +818,10 @@ namespace DitherStatistics.Plugin {
                         if (seriesPeriods.Count > 0) {
                             periodsPerSeries[series.Key] = seriesPeriods;
                             seriesWithPeriods.Add(series.Key);
+
+                            // Track the first (earliest) positive period for MinSettleTime calculation
+                            var firstPeriod = seriesPeriods.OrderBy(p => p.StartTimestamp).First();
+                            firstPeriodPerSeries[series.Key] = firstPeriod;
                         }
                     }
 
@@ -800,10 +857,16 @@ namespace DitherStatistics.Plugin {
                     }
 
                     allPositivePeriods[multiplier] = positivePeriods;
+                    firstPeriodPerSeriesAll[multiplier] = firstPeriodPerSeries;
                 }
 
                 // Write to file
                 WritePositivePeriodsFile(allPositivePeriods, runningRMS, rmsStdDev);
+
+                // Store results for CalculateRecommendation (called separately in OnDitherCollectionComplete)
+                lastFirstPeriodPerSeriesAll = firstPeriodPerSeriesAll;
+                Logger.Info($"PHD2Client: Positive period analysis complete. firstPeriodPerSeries counts: " +
+                    string.Join(", ", firstPeriodPerSeriesAll.Select(kvp => $"{kvp.Key:F1}σ={kvp.Value.Count}")));
 
             } catch (Exception ex) {
                 Logger.Error($"PHD2Client: Error analyzing positive periods: {ex.Message}");
@@ -870,6 +933,175 @@ namespace DitherStatistics.Plugin {
 
             } catch (Exception ex) {
                 Logger.Error($"PHD2Client: Error writing positive periods file: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Calculate recommended dither settle settings from analyzed positive periods.
+        /// Settle Pixel Tolerance = runningRMS + multiplier * rmsStdDev
+        /// MinSettleTime = median of (firstPeriod.StartTimestamp - ditherStartTime) per series,
+        ///                 rounded up to next full guide exposure
+        /// </summary>
+        private void CalculateRecommendation(List<DitherDataPoint> data, Dictionary<double, Dictionary<int, PositivePeriod>> firstPeriodPerSeriesAll, double runningRMS, double rmsStdDev) {
+            try {
+                // Need data from at least one dither series
+                int totalSeries = data.Select(p => p.DitherSeriesId).Distinct().Count();
+                if (totalSeries == 0) {
+                    Logger.Info("PHD2Client: No dither series in data, skipping recommendation");
+                    return;
+                }
+
+                Logger.Info($"PHD2Client: Calculating recommendation from {totalSeries} dither series, RMS={runningRMS:F4}, StdDev={rmsStdDev:F4}");
+
+                // Get dither start times per series from the data
+                var ditherStartTimes = data
+                    .GroupBy(p => p.DitherSeriesId)
+                    .ToDictionary(g => g.Key, g => g.Min(p => p.Timestamp));
+
+                double guideExposure = currentGuideExposure > 0 ? currentGuideExposure : 2.0;
+
+                var recommendation = new DitherSettingsRecommendation {
+                    DitherEventsAnalyzed = totalSeries,
+                    CurrentRunningRMS = runningRMS,
+                    CurrentRMSStdDev = rmsStdDev,
+                    GuideExposure = guideExposure
+                };
+
+                // Calculate Settle Pixel Tolerance for each multiplier
+                recommendation.SettlePixelTolerance_Quality = Math.Round(runningRMS + 1.5 * rmsStdDev, 2);
+                recommendation.SettlePixelTolerance_Balanced = Math.Round(runningRMS + 2.0 * rmsStdDev, 2);
+                recommendation.SettlePixelTolerance_Performance = Math.Round(runningRMS + 3.0 * rmsStdDev, 2);
+
+                // Calculate MinSettleTime for each multiplier from first positive periods
+                if (firstPeriodPerSeriesAll != null) {
+                    recommendation.MinSettleTime_Quality = CalculateMinSettleTime(firstPeriodPerSeriesAll, 1.5, ditherStartTimes, guideExposure);
+                    recommendation.MinSettleTime_Balanced = CalculateMinSettleTime(firstPeriodPerSeriesAll, 2.0, ditherStartTimes, guideExposure);
+                    recommendation.MinSettleTime_Performance = CalculateMinSettleTime(firstPeriodPerSeriesAll, 3.0, ditherStartTimes, guideExposure);
+                }
+
+                // Fallback: estimate MinSettleTime from first positive analysis value per series
+                if (recommendation.MinSettleTime_Quality == 0 || recommendation.MinSettleTime_Balanced == 0 || recommendation.MinSettleTime_Performance == 0) {
+                    EstimateMinSettleTimeFallback(data, recommendation, ditherStartTimes, runningRMS, rmsStdDev, guideExposure);
+                }
+
+                Logger.Info($"PHD2Client: Dither recommendation calculated - Events: {totalSeries}, " +
+                    $"SettlePixel: Q={recommendation.SettlePixelTolerance_Quality:F2} B={recommendation.SettlePixelTolerance_Balanced:F2} P={recommendation.SettlePixelTolerance_Performance:F2}, " +
+                    $"MinSettle: Q={recommendation.MinSettleTime_Quality:F1}s B={recommendation.MinSettleTime_Balanced:F1}s P={recommendation.MinSettleTime_Performance:F1}s");
+
+                DitherRecommendationUpdated?.Invoke(this, recommendation);
+
+            } catch (Exception ex) {
+                Logger.Error($"PHD2Client: Error calculating recommendation: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Calculate MinSettleTime for a specific multiplier as median of time-to-first-stable
+        /// rounded up to the next full guide exposure
+        /// </summary>
+        private double CalculateMinSettleTime(Dictionary<double, Dictionary<int, PositivePeriod>> firstPeriodPerSeriesAll, double multiplier, Dictionary<int, DateTime> ditherStartTimes, double guideExposure) {
+            if (!firstPeriodPerSeriesAll.ContainsKey(multiplier)) return 0;
+
+            var firstPeriods = firstPeriodPerSeriesAll[multiplier];
+            if (firstPeriods.Count == 0) return 0;
+
+            var settleDelays = new List<double>();
+            foreach (var kvp in firstPeriods) {
+                int seriesId = kvp.Key;
+                var period = kvp.Value;
+
+                if (ditherStartTimes.ContainsKey(seriesId)) {
+                    double delay = (period.StartTimestamp - ditherStartTimes[seriesId]).TotalSeconds;
+                    if (delay > 0) {
+                        settleDelays.Add(delay);
+                    }
+                }
+            }
+
+            if (settleDelays.Count == 0) return 0;
+
+            // Calculate median
+            settleDelays.Sort();
+            double median;
+            int count = settleDelays.Count;
+            if (count % 2 == 0) {
+                median = (settleDelays[count / 2 - 1] + settleDelays[count / 2]) / 2.0;
+            } else {
+                median = settleDelays[count / 2];
+            }
+
+            // Round up to next full guide exposure
+            if (guideExposure > 0) {
+                median = Math.Ceiling(median / guideExposure) * guideExposure;
+            }
+
+            return Math.Round(median, 1);
+        }
+
+        /// <summary>
+        /// Fallback MinSettleTime estimation: finds the first data point where PairRMS drops
+        /// below the threshold for each multiplier, using the time offset from series start.
+        /// Used when no bounded positive periods were found (common with good/stable guiding).
+        /// </summary>
+        private void EstimateMinSettleTimeFallback(List<DitherDataPoint> data, DitherSettingsRecommendation recommendation, Dictionary<int, DateTime> ditherStartTimes, double runningRMS, double rmsStdDev, double guideExposure) {
+            try {
+                var seriesGroups = data.GroupBy(p => p.DitherSeriesId).OrderBy(g => g.Key);
+                var multipliers = new[] { 1.5, 2.0, 3.0 };
+
+                foreach (double multiplier in multipliers) {
+                    // Skip if already calculated from bounded periods
+                    double currentValue = multiplier == 1.5 ? recommendation.MinSettleTime_Quality
+                                        : multiplier == 2.0 ? recommendation.MinSettleTime_Balanced
+                                        : recommendation.MinSettleTime_Performance;
+                    if (currentValue > 0) continue;
+
+                    double threshold = runningRMS + multiplier * rmsStdDev;
+                    var settleDelays = new List<double>();
+
+                    foreach (var series in seriesGroups) {
+                        if (!ditherStartTimes.ContainsKey(series.Key)) continue;
+                        var seriesStart = ditherStartTimes[series.Key];
+                        var points = series.OrderBy(p => p.Timestamp).ToList();
+
+                        // Find first point where PairRMS drops below threshold
+                        for (int i = 0; i < points.Count; i++) {
+                            if (points[i].PairRMS <= threshold) {
+                                double delay = (points[i].Timestamp - seriesStart).TotalSeconds;
+                                if (delay > 0) {
+                                    settleDelays.Add(delay);
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    if (settleDelays.Count == 0) continue;
+
+                    // Calculate median
+                    settleDelays.Sort();
+                    double median;
+                    int count = settleDelays.Count;
+                    if (count % 2 == 0) {
+                        median = (settleDelays[count / 2 - 1] + settleDelays[count / 2]) / 2.0;
+                    } else {
+                        median = settleDelays[count / 2];
+                    }
+
+                    // Round up to next full guide exposure
+                    if (guideExposure > 0) {
+                        median = Math.Ceiling(median / guideExposure) * guideExposure;
+                    }
+
+                    double result = Math.Round(median, 1);
+
+                    if (multiplier == 1.5) recommendation.MinSettleTime_Quality = result;
+                    else if (multiplier == 2.0) recommendation.MinSettleTime_Balanced = result;
+                    else recommendation.MinSettleTime_Performance = result;
+                }
+
+                Logger.Info("PHD2Client: MinSettleTime estimated using fallback (first point below threshold)");
+            } catch (Exception ex) {
+                Logger.Error($"PHD2Client: Error in MinSettleTime fallback estimation: {ex.Message}");
             }
         }
 
@@ -1043,5 +1275,22 @@ namespace DitherStatistics.Plugin {
         public double Exposure { get; set; }   // Guide exposure time in seconds
 
         public DateTime Timestamp { get; set; }
+    }
+
+    /// <summary>
+    /// Recommended dither settle settings computed from guiding data analysis.
+    /// Three profiles: Quality (1.5σ), Balanced (2.0σ), Performance (3.0σ)
+    /// </summary>
+    public class DitherSettingsRecommendation {
+        public double SettlePixelTolerance_Quality { get; set; }
+        public double SettlePixelTolerance_Balanced { get; set; }
+        public double SettlePixelTolerance_Performance { get; set; }
+        public double MinSettleTime_Quality { get; set; }
+        public double MinSettleTime_Balanced { get; set; }
+        public double MinSettleTime_Performance { get; set; }
+        public int DitherEventsAnalyzed { get; set; }
+        public double CurrentRunningRMS { get; set; }
+        public double CurrentRMSStdDev { get; set; }
+        public double GuideExposure { get; set; }
     }
 }

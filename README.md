@@ -129,6 +129,53 @@ NNI = observed_mean_NN / expected_mean_NN
 - **NNI < 0.8**: Fair (some clustering)
 - **NNI < 0.6**: Poor (significant clustering)
 
+## 🔧 Experimental Dither Settings Optimizer
+
+⚠️ **EXPERIMENTAL FEATURE**: The Dither Settings Optimizer analyzes post-dither guiding data to recommend optimal settle parameters. Results depend on your guiding setup and conditions. Use these recommendations as a starting point for tuning.
+
+After each dither event, the plugin collects guiding data and analyzes "positive periods" — time intervals where guiding is stable (PairRMS below threshold). From this data, it calculates recommended values for two key PHD2 dither settings:
+
+### Settle Pixel Tolerance
+
+**Algorithm**: Based on running RMS statistics across all analyzed dither events:
+
+```
+Settle Pixel Tolerance = Running RMS + multiplier × RMS Standard Deviation
+```
+
+Three profiles with different multipliers:
+- **Quality (1.5σ)**: Tight tolerance — waits for excellent guiding stability before resuming. Best image quality, longer settle times.
+- **Balanced (2.0σ)**: Moderate tolerance — good balance between quality and speed. Recommended for most setups.
+- **Performance (3.0σ)**: Relaxed tolerance — resumes imaging quickly. Maximizes imaging time, slight quality trade-off.
+
+### Minimum Settle Time
+
+**Algorithm**: Derived from the time it takes guiding to first become stable after each dither:
+
+1. For each dither event, identify the first "positive period" (stable guiding interval)
+2. Calculate the elapsed time from dither start to first stable guiding
+3. Take the median across all dither events
+4. Round up to the next full guide exposure interval
+
+The three profiles use the same σ multipliers for the stability threshold, resulting in:
+- **Quality (strict)**: Requires tighter stability → longer minimum settle time
+- **Balanced (normal)**: Moderate stability requirement
+- **Performance (fast)**: Accepts earlier stability → shorter minimum settle time
+
+### Requirements
+
+- Minimum **3 dither events** before recommendations appear
+- PHD2 must be connected and guiding
+- Recommendations improve in accuracy with more dither events
+- Panel can be toggled on/off independently of Quality Assessment
+
+### Display
+
+The optimizer panel shows three profile columns (Quality / Balanced / Performance), each displaying:
+- **Settle Pixel Tolerance** (in pixels)
+- **Minimum Settle Time** (in seconds, rounded to guide exposure)
+- Footer with number of analyzed events, current RMS, and guide exposure
+
 ## Quality Assessment Display
 
 The quality metrics panel appears automatically after collecting at least 4 dither positions and includes:
@@ -231,7 +278,7 @@ Reports are saved to: `%USERPROFILE%\Documents\NINA\DitherStatistics\`
 
 - C# / .NET 8.0
 - WPF
-- LiveCharts for visualization
+- ScottPlot for visualization
 - N.I.N.A. Plugin SDK
 
 ### Data Collection
@@ -277,6 +324,13 @@ This is normal! The targets are LOWER for higher drizzle scales because:
 
 A 90% coverage at 3× is excellent and requires 80+ well-distributed dithers!
 
+### Dither Settings Optimizer Not Showing Recommendations
+
+- Ensure at least 3 dither events have been recorded
+- Verify the Dither Settings Optimizer toggle is enabled
+- Check that PHD2 is connected and guiding during dither events
+- With very short exposures (DitherAfterExposures=1), recommendations update after each dither rather than waiting for the 30-second collection period
+
 ### No Dither Events Detected
 
 - Verify guiding software connection in N.I.N.A.
@@ -294,7 +348,18 @@ This is an experimental plugin under active development. Feedback and suggestion
 
 ## Changelog
 
-### Version 1.2.0 (Current - STRICT Grading, N.I.N.A 3.2 support)
+### Version 1.3.0 (Current - Dither Settings Optimizer)
+
+- ✨ NEW: Experimental Dither Settings Optimizer
+- **Three profiles**: Quality (1.5σ), Balanced (2.0σ), Performance (3.0σ)
+- Recommends optimal **Settle Pixel Tolerance** based on running RMS and standard deviation
+- Recommends optimal **Minimum Settle Time** based on time-to-first-stable guiding analysis
+- Post-dither guiding data collection with positive period detection
+- Auto-updates after each dither event (minimum 3 events required)
+- Toggle-able panel with persistent settings
+- Thread-safe data collection supporting rapid dithering scenarios
+
+### Version 1.2.0 (STRICT Grading, N.I.N.A 3.2 support)
 
 - ✨ Updated quality assessment with STRICT grading scale
 - **CD Scale**: Recalibrated to encourage 30+ dithers for "Good", 50+ for "Excellent"
@@ -347,7 +412,7 @@ The STRICT grading scale is intentionally demanding to encourage excellent dithe
 
 ---
 
-**Plugin Version**: 1.2.0 (Strict Grading Scale)  
+**Plugin Version**: 1.3.0 (Dither Settings Optimizer)
 **N.I.N.A. Compatibility**: 3.0+  
 **Author**: Thierry Tschanz  
 **Repository**: [NINA-DitherStatistics](https://github.com/Thierrytsch/NINA-DitherStatistics)
