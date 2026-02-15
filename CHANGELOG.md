@@ -26,3 +26,6 @@
 
 ## 1.2.0.4
 - Bugfixes
+
+## 1.3.0.0
+- Added experimental dither settings optimizer

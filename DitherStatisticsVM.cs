@@ -71,6 +71,9 @@ namespace DitherStatistics.Plugin {
             // Load quality assessment toggle setting
             LoadQualityAssessmentSetting();
 
+            // Load dither optimizer toggle setting
+            LoadDitherOptimizerSetting();
+
             // Subscribe to NINA guider events (optional, for connection monitoring)
             SubscribeToGuiderEvents();
 
@@ -79,6 +82,7 @@ namespace DitherStatistics.Plugin {
             phd2Client.GuidingDithered += OnPHD2GuidingDithered;
             phd2Client.SettleDone += OnPHD2SettleDone;
             phd2Client.ConnectionStatusChanged += OnPHD2ConnectionStatusChanged;
+            phd2Client.DitherRecommendationUpdated += OnDitherRecommendationUpdated;
 
             // Auto-connect to PHD2 after a short delay
             System.Threading.Tasks.Task.Run(async () => {
@@ -383,6 +387,120 @@ namespace DitherStatistics.Plugin {
                 Logger.Info($"Quality Assessment setting saved to file: {IsQualityAssessmentEnabled}");
             } catch (Exception ex) {
                 Logger.Error($"Error saving Quality Assessment setting: {ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #region Properties - Dither Settings Optimizer
+
+        private bool isDitherOptimizerEnabled;
+        public bool IsDitherOptimizerEnabled {
+            get => isDitherOptimizerEnabled;
+            set {
+                isDitherOptimizerEnabled = value;
+                RaisePropertyChanged();
+                RaisePropertyChanged(nameof(ShowDitherOptimizer));
+                RaisePropertyChanged(nameof(ShowDitherOptimizerDisabledMessage));
+                SaveDitherOptimizerSetting();
+            }
+        }
+
+        private DitherSettingsRecommendation recommendation;
+        public DitherSettingsRecommendation Recommendation {
+            get => recommendation;
+            set {
+                recommendation = value;
+                RaisePropertyChanged();
+                RaisePropertyChanged(nameof(HasRecommendationData));
+                RaisePropertyChanged(nameof(ShowDitherOptimizer));
+                RaisePropertyChanged(nameof(SettlePixelQuality));
+                RaisePropertyChanged(nameof(SettlePixelBalanced));
+                RaisePropertyChanged(nameof(SettlePixelPerformance));
+                RaisePropertyChanged(nameof(MinSettleTimeQuality));
+                RaisePropertyChanged(nameof(MinSettleTimeBalanced));
+                RaisePropertyChanged(nameof(MinSettleTimePerformance));
+                RaisePropertyChanged(nameof(RecommendationInfo));
+            }
+        }
+
+        public bool HasRecommendationData => Recommendation != null && Recommendation.DitherEventsAnalyzed >= 3;
+        public bool ShowDitherOptimizer => IsDitherOptimizerEnabled && HasRecommendationData;
+        public bool ShowDitherOptimizerDisabledMessage => !IsDitherOptimizerEnabled;
+
+        public string SettlePixelQuality => Recommendation != null
+            ? $"{Recommendation.SettlePixelTolerance_Quality:F2}"
+            : "N/A";
+
+        public string SettlePixelBalanced => Recommendation != null
+            ? $"{Recommendation.SettlePixelTolerance_Balanced:F2}"
+            : "N/A";
+
+        public string SettlePixelPerformance => Recommendation != null
+            ? $"{Recommendation.SettlePixelTolerance_Performance:F2}"
+            : "N/A";
+
+        public string MinSettleTimeQuality => Recommendation != null
+            ? $"{Recommendation.MinSettleTime_Quality:F1}"
+            : "N/A";
+
+        public string MinSettleTimeBalanced => Recommendation != null
+            ? $"{Recommendation.MinSettleTime_Balanced:F1}"
+            : "N/A";
+
+        public string MinSettleTimePerformance => Recommendation != null
+            ? $"{Recommendation.MinSettleTime_Performance:F1}"
+            : "N/A";
+
+        public string RecommendationInfo => Recommendation != null
+            ? $"Based on {Recommendation.DitherEventsAnalyzed} dither events | RMS: {Recommendation.CurrentRunningRMS:F2} px | Exposure: {Recommendation.GuideExposure:F1}s"
+            : "";
+
+        // Settings file path for optimizer toggle
+        private static readonly string OptimizerSettingsFilePath = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "NINA", "DitherStatistics", "optimizer_settings.txt"
+        );
+
+        private void LoadDitherOptimizerSetting() {
+            try {
+                if (System.IO.File.Exists(OptimizerSettingsFilePath)) {
+                    var content = System.IO.File.ReadAllText(OptimizerSettingsFilePath).Trim();
+                    if (bool.TryParse(content, out bool value)) {
+                        IsDitherOptimizerEnabled = value;
+                        Logger.Info($"Dither Optimizer setting loaded from file: {IsDitherOptimizerEnabled}");
+                        return;
+                    }
+                }
+                IsDitherOptimizerEnabled = false;
+                Logger.Info("Dither Optimizer setting file not found, using default: OFF");
+            } catch (Exception ex) {
+                Logger.Error($"Error loading Dither Optimizer setting: {ex.Message}");
+                IsDitherOptimizerEnabled = false;
+            }
+        }
+
+        private void SaveDitherOptimizerSetting() {
+            try {
+                var directory = System.IO.Path.GetDirectoryName(OptimizerSettingsFilePath);
+                if (!System.IO.Directory.Exists(directory)) {
+                    System.IO.Directory.CreateDirectory(directory);
+                }
+                System.IO.File.WriteAllText(OptimizerSettingsFilePath, IsDitherOptimizerEnabled.ToString());
+                Logger.Info($"Dither Optimizer setting saved to file: {IsDitherOptimizerEnabled}");
+            } catch (Exception ex) {
+                Logger.Error($"Error saving Dither Optimizer setting: {ex.Message}");
+            }
+        }
+
+        private void OnDitherRecommendationUpdated(object sender, DitherSettingsRecommendation e) {
+            try {
+                Application.Current?.Dispatcher.Invoke(() => {
+                    Recommendation = e;
+                    Logger.Info($"Dither recommendation updated on UI thread - Events: {e.DitherEventsAnalyzed}");
+                });
+            } catch (Exception ex) {
+                Logger.Error($"Error updating dither recommendation on UI: {ex.Message}");
             }
         }
 

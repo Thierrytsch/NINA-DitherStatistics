@@ -16,9 +16,9 @@
 	<!-- CENTRAL VERSION - ONLY CHANGE HERE! -->
 	<!-- ============================================ -->
 	<PropertyGroup>
-		<Version>1.2.0.4</Version>
-		<AssemblyVersion>1.2.0.4</AssemblyVersion>
-		<FileVersion>1.2.0.4</FileVersion>
+		<Version>1.3.0.0</Version>
+		<AssemblyVersion>1.3.0.0</AssemblyVersion>
+		<FileVersion>1.3.0.0</FileVersion>
 	</PropertyGroup>
 
 	<!-- ============================================ -->
@@ -58,7 +58,7 @@
 		<AssemblyMetadata Include="ChangelogURL" Value="https://github.com/Thierrytsch/NINA-DitherStatistics/CHANGELOG.md" />
 
 		<!-- Tags -->
-		<AssemblyMetadata Include="Tags" Value="imaging,guiding,dithering,statistics,phd2,quality,analysis" />
+		<AssemblyMetadata Include="Tags" Value="imaging,guiding,dithering,statistics,phd2,quality,analysis,optimizer,settle" />
 
 		<!-- Screenshots/Images -->
 		<AssemblyMetadata Include="FeaturedImageURL" Value="https://raw.githubusercontent.com/Thierrytsch/NINA-DitherStatistics/main/DitherStatistics-Logo.png" />
@@ -82,10 +82,23 @@
 
 Minimum 4 dithers required for quality metrics. Assessments improve with 15+ positions.
 
+# Experimental Dither Settings Optimizer (NEW in 1.3)
+⚠️ EXPERIMENTAL: Analyzes post-dither guiding data to recommend optimal settle parameters:
+* **Three profiles**: Quality (1.5σ), Balanced (2.0σ), Performance (3.0σ)
+* **Settle Pixel Tolerance**: Calculated from running RMS and standard deviation
+* **Minimum Settle Time**: Derived from time-to-first-stable guiding per dither event
+* Auto-updates after each dither event, requires minimum 3 events
+
 # Requirements
 * N.I.N.A. 3.1 or higher
 * .NET 8.0 Runtime
 * PHD2
+
+# Version 1.3 Changes
+* NEW: Experimental Dither Settings Optimizer with three profiles (Quality/Balanced/Performance)
+* Recommends optimal Settle Pixel Tolerance and Minimum Settle Time based on live guiding data
+* Post-dither guiding analysis with positive period detection
+* Toggle-able panel with persistent settings
 
 # Version 1.2 Changes
 * Migrated from LiveCharts to ScottPlot for better performance and NINA 3.2 compatibility
