@@ -124,3 +124,6 @@ packages/
 *.cache
 *.log
 /nul
+
+## Claude
+.claude/
