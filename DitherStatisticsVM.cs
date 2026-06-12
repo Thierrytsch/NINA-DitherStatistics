@@ -74,6 +74,9 @@ namespace DitherStatistics.Plugin {
             // Load dither optimizer toggle setting
             LoadDitherOptimizerSetting();
 
+            // Load statistics persistence toggle setting
+            LoadStatisticsPersistenceSetting();
+
             // Subscribe to NINA guider events (optional, for connection monitoring)
             SubscribeToGuiderEvents();
 
@@ -83,6 +86,10 @@ namespace DitherStatistics.Plugin {
             phd2Client.SettleDone += OnPHD2SettleDone;
             phd2Client.ConnectionStatusChanged += OnPHD2ConnectionStatusChanged;
             phd2Client.DitherRecommendationUpdated += OnDitherRecommendationUpdated;
+
+            // Restore statistics from the previous session if persistence is enabled
+            // (after PHD2 client creation - optimizer data is restored into the client)
+            RestoreStatisticsData();
 
             // Auto-connect to PHD2 after a short delay
             System.Threading.Tasks.Task.Run(async () => {
@@ -499,8 +506,175 @@ namespace DitherStatistics.Plugin {
                     Recommendation = e;
                     Logger.Info($"Dither recommendation updated on UI thread - Events: {e.DitherEventsAnalyzed}");
                 });
+
+                // The optimizer analysis completes ~30s after the dither settles,
+                // so persist again to capture the new data points and recommendation
+                SaveStatisticsData();
             } catch (Exception ex) {
                 Logger.Error($"Error updating dither recommendation on UI: {ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #region Properties - Statistics Persistence
+
+        private bool isStatisticsPersistenceEnabled;
+        public bool IsStatisticsPersistenceEnabled {
+            get => isStatisticsPersistenceEnabled;
+            set {
+                if (isStatisticsPersistenceEnabled == value) return;
+                isStatisticsPersistenceEnabled = value;
+                RaisePropertyChanged();
+                SaveStatisticsPersistenceSetting();
+
+                if (value) {
+                    // Snapshot the current state immediately so a restart right after enabling restores it
+                    SaveStatisticsData();
+                } else {
+                    DeleteStatisticsData();
+                }
+            }
+        }
+
+        private readonly object persistenceLock = new object();
+
+        // Settings file path for persistence toggle
+        private static readonly string PersistenceSettingsFilePath = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "NINA", "DitherStatistics", "persistence_settings.txt"
+        );
+
+        // Data file holding the persisted statistics snapshot
+        private static readonly string StatisticsDataFilePath = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "NINA", "DitherStatistics", "statistics_data.json"
+        );
+
+        private void LoadStatisticsPersistenceSetting() {
+            try {
+                if (System.IO.File.Exists(PersistenceSettingsFilePath)) {
+                    var content = System.IO.File.ReadAllText(PersistenceSettingsFilePath).Trim();
+                    if (bool.TryParse(content, out bool value)) {
+                        // Set the backing field directly - going through the setter would
+                        // overwrite the data file with the still-empty statistics before restore
+                        isStatisticsPersistenceEnabled = value;
+                        RaisePropertyChanged(nameof(IsStatisticsPersistenceEnabled));
+                        Logger.Info($"Statistics Persistence setting loaded from file: {isStatisticsPersistenceEnabled}");
+                        return;
+                    }
+                }
+                isStatisticsPersistenceEnabled = false;
+                Logger.Info("Statistics Persistence setting file not found, using default: OFF");
+            } catch (Exception ex) {
+                Logger.Error($"Error loading Statistics Persistence setting: {ex.Message}");
+                isStatisticsPersistenceEnabled = false;
+            }
+        }
+
+        private void SaveStatisticsPersistenceSetting() {
+            try {
+                var directory = System.IO.Path.GetDirectoryName(PersistenceSettingsFilePath);
+                if (!System.IO.Directory.Exists(directory)) {
+                    System.IO.Directory.CreateDirectory(directory);
+                }
+                System.IO.File.WriteAllText(PersistenceSettingsFilePath, isStatisticsPersistenceEnabled.ToString());
+                Logger.Info($"Statistics Persistence setting saved to file: {isStatisticsPersistenceEnabled}");
+            } catch (Exception ex) {
+                Logger.Error($"Error saving Statistics Persistence setting: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Persist the complete statistics state to disk.
+        /// Called after every completed dither, on Clear Data and on shutdown,
+        /// so the data file always mirrors the current view.
+        /// </summary>
+        private void SaveStatisticsData() {
+            if (!isStatisticsPersistenceEnabled) return;
+            try {
+                lock (persistenceLock) {
+                    var data = new PersistedStatisticsData {
+                        DitherEvents = ditherEvents.ToList(),
+                        SettleTimeValues = settleTimeValues.ToList(),
+                        PixelShiftValues = pixelShiftValues.ToList(),
+                        CumulativeX = cumulativeX,
+                        CumulativeY = cumulativeY,
+                        OptimizerData = phd2Client?.GetDitherAnalysisSnapshot(),
+                        Recommendation = Recommendation
+                    };
+
+                    var directory = System.IO.Path.GetDirectoryName(StatisticsDataFilePath);
+                    if (!System.IO.Directory.Exists(directory)) {
+                        System.IO.Directory.CreateDirectory(directory);
+                    }
+
+                    var json = System.Text.Json.JsonSerializer.Serialize(data);
+                    System.IO.File.WriteAllText(StatisticsDataFilePath, json);
+                }
+                Logger.Debug($"Statistics data persisted ({ditherEvents.Count} dither events)");
+            } catch (Exception ex) {
+                Logger.Error($"Error saving statistics data: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Restore the statistics state from the previous session (constructor only).
+        /// Chart updates are deferred to the UI thread because the WpfPlot
+        /// instances must not be created from the VM constructor.
+        /// </summary>
+        private void RestoreStatisticsData() {
+            if (!isStatisticsPersistenceEnabled) return;
+            try {
+                if (!System.IO.File.Exists(StatisticsDataFilePath)) {
+                    Logger.Info("Statistics persistence enabled but no data file found - starting with empty statistics");
+                    return;
+                }
+
+                var json = System.IO.File.ReadAllText(StatisticsDataFilePath);
+                var data = System.Text.Json.JsonSerializer.Deserialize<PersistedStatisticsData>(json);
+                if (data == null) return;
+
+                foreach (var evt in data.DitherEvents ?? new List<DitherEvent>()) {
+                    ditherEvents.Add(evt);
+                }
+                settleTimeValues.AddRange(data.SettleTimeValues ?? new List<double>());
+                pixelShiftValues.AddRange(data.PixelShiftValues ?? new List<PixelShiftPoint>());
+                cumulativeX = data.CumulativeX;
+                cumulativeY = data.CumulativeY;
+
+                // Restore optimizer raw data so new dithers accumulate on the analysis
+                phd2Client?.RestoreDitherAnalysisData(data.OptimizerData);
+
+                var restoredRecommendation = data.Recommendation;
+                Application.Current?.Dispatcher.BeginInvoke(
+                    System.Windows.Threading.DispatcherPriority.Loaded,
+                    new Action(() => {
+                        if (restoredRecommendation != null) {
+                            Recommendation = restoredRecommendation;
+                        }
+                        UpdateSettleTimeChart();
+                        UpdatePixelShiftChart();
+                        UpdateStatistics();
+                        UpdateQualityMetrics();
+                    }));
+
+                Logger.Info($"Restored {ditherEvents.Count} dither events from previous session");
+            } catch (Exception ex) {
+                Logger.Error($"Error restoring statistics data: {ex.Message}");
+            }
+        }
+
+        private void DeleteStatisticsData() {
+            try {
+                lock (persistenceLock) {
+                    if (System.IO.File.Exists(StatisticsDataFilePath)) {
+                        System.IO.File.Delete(StatisticsDataFilePath);
+                    }
+                }
+                Logger.Info("Persisted statistics data deleted (persistence disabled)");
+            } catch (Exception ex) {
+                Logger.Error($"Error deleting statistics data: {ex.Message}");
             }
         }
 
@@ -612,10 +786,17 @@ namespace DitherStatistics.Plugin {
             cumulativeY = 0.0;
             currentDither = null;
 
+            // Clear dither optimizer data and recommendation
+            phd2Client?.ClearDitherAnalysisData();
+            Recommendation = null;
+
             UpdateSettleTimeChart();
             UpdatePixelShiftChart();
             UpdateStatistics();
             UpdateQualityMetrics();
+
+            // Persist the cleared state so a restart does not bring the old data back
+            SaveStatisticsData();
 
             Logger.Info("All data cleared");
         }
@@ -817,6 +998,9 @@ namespace DitherStatistics.Plugin {
 
                 // Clear current dither
                 currentDither = null;
+
+                // Persist updated statistics if multi-session persistence is enabled
+                SaveStatisticsData();
 
             } catch (Exception ex) {
                 Logger.Error($"Error handling SettleDone: {ex.Message}");
@@ -1295,6 +1479,9 @@ namespace DitherStatistics.Plugin {
 
         public void Dispose() {
             try {
+                // Persist final statistics state before shutdown
+                SaveStatisticsData();
+
                 // Stop theme color monitoring timer
                 if (themeColorTimer != null) {
                     themeColorTimer.Tick -= OnThemeColorTimerTick;

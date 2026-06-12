@@ -43,7 +43,8 @@ namespace DitherStatistics.Plugin {
         private DateTime lastGuideStepTime = DateTime.MinValue;  // For calculating exposure from timing
 
         // Dither analysis tracking
-        private class DitherDataPoint {
+        // Public with settable properties for JSON serialization (statistics persistence)
+        public class DitherDataPoint {
             public int DitherSeriesId { get; set; }  // Identifies which dither event this point belongs to
             public double DX { get; set; }
             public double DY { get; set; }
@@ -1106,6 +1107,60 @@ namespace DitherStatistics.Plugin {
         }
 
         /// <summary>
+        /// Snapshot of the dither optimizer analysis state for multi-session persistence.
+        /// Includes points from the still-running collection window so nothing is lost
+        /// when NINA is closed before the 30-second timer completes.
+        /// </summary>
+        public DitherAnalysisSnapshot GetDitherAnalysisSnapshot() {
+            var snapshot = new DitherAnalysisSnapshot();
+            lock (ditherDataLock) {
+                snapshot.DitherData.AddRange(allDitherData);
+            }
+            snapshot.DitherData.AddRange(currentDitherSeries.ToList());
+            snapshot.DitherSeriesCounter = ditherSeriesCounter;
+            return snapshot;
+        }
+
+        /// <summary>
+        /// Restore the dither optimizer analysis state from a previous session.
+        /// The series counter resumes above the highest restored id so new dither
+        /// series accumulate on top without id collisions.
+        /// </summary>
+        public void RestoreDitherAnalysisData(DitherAnalysisSnapshot snapshot) {
+            try {
+                if (snapshot?.DitherData == null || snapshot.DitherData.Count == 0) return;
+
+                lock (ditherDataLock) {
+                    allDitherData.Clear();
+                    allDitherData.AddRange(snapshot.DitherData);
+                }
+                ditherSeriesCounter = Math.Max(snapshot.DitherSeriesCounter, snapshot.DitherData.Max(p => p.DitherSeriesId));
+
+                int totalSeries = snapshot.DitherData.Select(p => p.DitherSeriesId).Distinct().Count();
+                Logger.Info($"PHD2Client: Restored {snapshot.DitherData.Count} optimizer data points ({totalSeries} dither series) from previous session");
+            } catch (Exception ex) {
+                Logger.Error($"PHD2Client: Error restoring dither analysis data: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Clear all dither optimizer analysis data (Clear Data button)
+        /// </summary>
+        public void ClearDitherAnalysisData() {
+            try {
+                lock (ditherDataLock) {
+                    allDitherData.Clear();
+                }
+                currentDitherSeries.Clear();
+                ditherSeriesCounter = 0;
+                lastFirstPeriodPerSeriesAll = null;
+                Logger.Info("PHD2Client: Dither analysis data cleared");
+            } catch (Exception ex) {
+                Logger.Error($"PHD2Client: Error clearing dither analysis data: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Send a JSON-RPC request to PHD2 and wait for response
         /// </summary>
         private async Task<JsonElement> SendJsonRpcRequest(string method, object parameters = null) {
@@ -1231,6 +1286,14 @@ namespace DitherStatistics.Plugin {
             writer?.Dispose();
             client?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Serializable snapshot of the dither optimizer analysis state (multi-session persistence)
+    /// </summary>
+    public class DitherAnalysisSnapshot {
+        public List<PHD2Client.DitherDataPoint> DitherData { get; set; } = new List<PHD2Client.DitherDataPoint>();
+        public int DitherSeriesCounter { get; set; }
     }
 
     /// <summary>

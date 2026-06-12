@@ -14,6 +14,7 @@ A comprehensive plugin for N.I.N.A. (Nighttime Imaging 'N' Astronomy) that provi
   - Average settle time
   - Mean pixel drift (X/Y components)
   - Standard deviation of movements
+- **Multi-Session Persistence** (optional): "Keep across sessions" toggle in the Statistics panel restores all statistics — including quality metrics and optimizer data — across NINA restarts, accumulating new dithers on top
 
 ## 🔬 Experimental Quality Assessment
 
@@ -348,7 +349,16 @@ This is an experimental plugin under active development. Feedback and suggestion
 
 ## Changelog
 
-### Version 1.3.0 (Current - Dither Settings Optimizer)
+### Version 1.4.0 (Current - Multi-Session Statistics Persistence)
+
+- ✨ NEW: Optional multi-session statistics persistence
+- "Keep across sessions" toggle in the Statistics panel (default: off), toggle state survives restarts
+- With the toggle ON, all statistics are restored on startup exactly as they were when NINA was closed: charts, statistical summary, quality metrics, optimizer data and recommendation
+- Subsequent dithers accumulate on top of the restored state, as if the session had never been interrupted
+- Data is stored in `%LOCALAPPDATA%\NINA\DitherStatistics\statistics_data.json` and updated after every dither, on Clear Data and on shutdown
+- Clear Data now also resets the Dither Settings Optimizer data and recommendation
+
+### Version 1.3.0 (Dither Settings Optimizer)
 
 - ✨ NEW: Experimental Dither Settings Optimizer
 - **Three profiles**: Quality (1.5σ), Balanced (2.0σ), Performance (3.0σ)
@@ -412,7 +422,7 @@ The STRICT grading scale is intentionally demanding to encourage excellent dithe
 
 ---
 
-**Plugin Version**: 1.3.0 (Dither Settings Optimizer)
+**Plugin Version**: 1.4.0 (Multi-Session Statistics Persistence)
 **N.I.N.A. Compatibility**: 3.0+  
 **Author**: Thierry Tschanz  
 **Repository**: [NINA-DitherStatistics](https://github.com/Thierrytsch/NINA-DitherStatistics)

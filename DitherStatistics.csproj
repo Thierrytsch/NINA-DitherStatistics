@@ -16,9 +16,9 @@
 	<!-- CENTRAL VERSION - ONLY CHANGE HERE! -->
 	<!-- ============================================ -->
 	<PropertyGroup>
-		<Version>1.3.0.0</Version>
-		<AssemblyVersion>1.3.0.0</AssemblyVersion>
-		<FileVersion>1.3.0.0</FileVersion>
+		<Version>1.4.0.0</Version>
+		<AssemblyVersion>1.4.0.0</AssemblyVersion>
+		<FileVersion>1.4.0.0</FileVersion>
 	</PropertyGroup>
 
 	<!-- ============================================ -->
@@ -89,10 +89,23 @@ Minimum 4 dithers required for quality metrics. Assessments improve with 15+ pos
 * **Minimum Settle Time**: Derived from time-to-first-stable guiding per dither event
 * Auto-updates after each dither event, requires minimum 3 events
 
+# Multi-Session Statistics Persistence (NEW in 1.4)
+Optionally carry all statistics over across NINA sessions:
+* Toggle in the Statistics panel (default: off), state survives restarts
+* All charts, statistics, quality metrics and optimizer data are restored exactly as they were when NINA was closed
+* Subsequent dithers accumulate on top of the restored state
+* Clear Data resets everything including the optimizer analysis
+
 # Requirements
 * N.I.N.A. 3.1 or higher
 * .NET 8.0 Runtime
 * PHD2
+
+# Version 1.4 Changes
+* NEW: Multi-session statistics persistence - optionally restore all statistics across NINA restarts
+* Persistence toggle in the Statistics panel (default: off), toggle state itself is persisted
+* Dither Settings Optimizer data and recommendation are persisted and restored as well
+* Clear Data now also resets the Dither Settings Optimizer data and recommendation
 
 # Version 1.3 Changes
 * NEW: Experimental Dither Settings Optimizer with three profiles (Quality/Balanced/Performance)

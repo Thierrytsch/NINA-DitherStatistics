@@ -29,3 +29,7 @@
 
 ## 1.3.0.0
 - Added experimental dither settings optimizer
+
+## 1.4.0.0
+- Added optional multi-session statistics persistence: all statistics (charts, summary, quality metrics, dither settings optimizer data and recommendation) can be restored across NINA restarts via a new toggle in the Statistics panel (default: off)
+- Clear Data now also resets the dither settings optimizer data and recommendation
