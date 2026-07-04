@@ -16,9 +16,9 @@
 	<!-- CENTRAL VERSION - ONLY CHANGE HERE! -->
 	<!-- ============================================ -->
 	<PropertyGroup>
-		<Version>1.4.0.0</Version>
-		<AssemblyVersion>1.4.0.0</AssemblyVersion>
-		<FileVersion>1.4.0.0</FileVersion>
+		<Version>1.5.0.0</Version>
+		<AssemblyVersion>1.5.0.0</AssemblyVersion>
+		<FileVersion>1.5.0.0</FileVersion>
 	</PropertyGroup>
 
 	<!-- ============================================ -->
@@ -76,11 +76,12 @@
 # Experimental Quality Assessment
 ⚠️ EXPERIMENTAL: Advanced mathematical analysis of dither patterns using:
 * **Centered L₂ Discrepancy** - Global uniformity measurement from quasi-Monte Carlo theory
-* **Voronoi Cell CV** - Local spatial distribution and clustering analysis
-* **Drizzle Gap-Fill Metrics** - Sub-pixel coverage predictions for 1×, 2×, 3× drizzle
-* **Combined Quality Score** - Overall pattern quality rating with recommendations
+* **Drizzle Weight Uniformity** - Real drizzle simulation predicting coverage evenness for 1×, 2×, 3× drizzle
+* **Drift Ratio** - Detects one-directional dither drift (walking noise risk) and too-small pattern spread
+* **Combined Quality Score** - Overall pattern quality rating with recommendations, Monte-Carlo calibrated for random dithering
+* Automatic guider→main-camera pixel scale conversion (PHD2 pixel scale + NINA profile, manual override available)
 
-Minimum 4 dithers required for quality metrics. Assessments improve with 15+ positions.
+Minimum 4 dithers required for quality metrics. Assessments improve with 20+ positions.
 
 # Experimental Dither Settings Optimizer (NEW in 1.3)
 ⚠️ EXPERIMENTAL: Analyzes post-dither guiding data to recommend optimal settle parameters:
@@ -96,10 +97,27 @@ Optionally carry all statistics over across NINA sessions:
 * Subsequent dithers accumulate on top of the restored state
 * Clear Data resets everything including the optimizer analysis
 
+# Multiple Statistics Profiles (NEW in 1.5)
+Keep separate statistics for different targets or telescopes:
+* Toggle in the Statistics panel (default: off) shows a profile selector
+* Create new profiles by typing a name into the editable box, delete them with one click (the Default profile always exists and cannot be deleted)
+* All statistics, quality metrics and optimizer data are recorded into the selected profile; switching profiles instantly shows that profile's data
+* Profiles keep their data for the whole session; combined with Keep across sessions, ALL profiles survive NINA restarts
+* Clear Data clears the data of all profiles (profile names are kept)
+
 # Requirements
 * N.I.N.A. 3.1 or higher
 * .NET 8.0 Runtime
 * PHD2
+
+# Version 1.5 Changes
+* NEW: Multiple statistics profiles - keep separate statistics per target or telescope, selectable via an editable profile box in the Statistics panel (default: off)
+* Profiles can be created and deleted on the fly; the Default profile always exists
+* With Keep across sessions enabled, all profiles are persisted and restored across NINA restarts (existing 1.4 data is migrated into the Default profile automatically)
+* Clear Data now clears the data of all profiles
+* Reworked quality assessment: fixed sub-pixel phase wrapping, real drizzle weight simulation instead of area heuristic, no more double-counted discrepancy penalty, quantile-calibrated thresholds with confidence margin (~50 dithers = Good, ~80 = Very Good, ~120+ = Excellent)
+* Removed redundant Voronoi CV metric; NEW Drift Ratio metric (walking noise warning)
+* NEW: automatic guider→main-camera pixel scale conversion and configurable drizzle pixfrac
 
 # Version 1.4 Changes
 * NEW: Multi-session statistics persistence - optionally restore all statistics across NINA restarts

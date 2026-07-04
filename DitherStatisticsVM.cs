@@ -71,14 +71,28 @@ namespace DitherStatistics.Plugin {
             // Load quality assessment toggle setting
             LoadQualityAssessmentSetting();
 
+            // Load pixfrac / pixel scale ratio settings for the quality metrics
+            LoadQualityMetricSettings();
+
             // Load dither optimizer toggle setting
             LoadDitherOptimizerSetting();
 
             // Load statistics persistence toggle setting
             LoadStatisticsPersistenceSetting();
 
+            // Load multi-profile toggle and profile list, then migrate the legacy
+            // v1.4 single data file into the new per-profile layout
+            LoadMultiProfileSetting();
+            LoadProfileListSetting();
+            MigrateLegacyStatisticsFile();
+
             // Subscribe to NINA guider events (optional, for connection monitoring)
             SubscribeToGuiderEvents();
+
+            // Re-evaluate the quality metrics (incl. pixel scale ratio) when the
+            // NINA profile changes - focal length / pixel size differ per profile
+            profileService.ProfileChanged += (s, e) =>
+                Application.Current?.Dispatcher.BeginInvoke(new Action(UpdateQualityMetrics));
 
             // Initialize PHD2 client
             phd2Client = new PHD2Client("127.0.0.1", 4400);
@@ -86,6 +100,9 @@ namespace DitherStatistics.Plugin {
             phd2Client.SettleDone += OnPHD2SettleDone;
             phd2Client.ConnectionStatusChanged += OnPHD2ConnectionStatusChanged;
             phd2Client.DitherRecommendationUpdated += OnDitherRecommendationUpdated;
+
+            // The client labels its diagnostic export files with the active profile
+            phd2Client.CurrentProfileName = selectedProfileName;
 
             // Restore statistics from the previous session if persistence is enabled
             // (after PHD2 client creation - optimizer data is restored into the client)
@@ -397,6 +414,129 @@ namespace DitherStatistics.Plugin {
             }
         }
 
+        // Drizzle pixfrac and guider->main-camera pixel scale conversion for the
+        // quality metrics; persisted as key=value lines (same folder as settings.txt)
+        private static readonly string QualityMetricSettingsFilePath = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "NINA", "DitherStatistics", "quality_settings.txt"
+        );
+
+        private double qualityPixfrac = 0.6;
+        public double QualityPixfrac {
+            get => qualityPixfrac;
+            set {
+                if (value > 0 && value <= 1.0) {
+                    qualityPixfrac = value;
+                }
+                RaisePropertyChanged();
+                SaveQualityMetricSettings();
+                UpdateQualityMetrics();
+            }
+        }
+
+        private double pixelScaleRatioOverride = 0.0;
+        /// <summary>Manual main-cam-px per guider-px factor; 0 = derive automatically</summary>
+        public double PixelScaleRatioOverride {
+            get => pixelScaleRatioOverride;
+            set {
+                if (value >= 0) {
+                    pixelScaleRatioOverride = value;
+                }
+                RaisePropertyChanged();
+                SaveQualityMetricSettings();
+                UpdateQualityMetrics();
+            }
+        }
+
+        // How the effective ratio was determined; shown in the panel so a fallback
+        // value of 1.00 is not mistaken for a measured ratio
+        private string pixelScaleRatioSource = "fallback";
+        private bool hasLoggedRatioFallback = false;
+
+        /// <summary>
+        /// Main-camera pixels per guide-camera pixel, evaluated fresh on every
+        /// calculation so NINA profile switches and reconnects are picked up.
+        /// Manual override wins; otherwise the guider scale comes from NINA's
+        /// GuiderInfo (pushed via IGuiderConsumer, primary) or PHD2 get_pixel_scale
+        /// (secondary), and the main-camera scale from the active NINA profile
+        /// (arcsec/px = 206.265 * pixelSize[µm] / focalLength[mm]). Falls back to 1.0.
+        /// </summary>
+        private double GetPixelScaleRatio() {
+            if (pixelScaleRatioOverride > 0) {
+                pixelScaleRatioSource = "manual";
+                return pixelScaleRatioOverride;
+            }
+
+            try {
+                double guiderScale = ninaGuiderPixelScale > 0
+                    ? ninaGuiderPixelScale
+                    : (phd2Client?.GuiderPixelScaleArcsec ?? 0);
+                double pixelSize = profileService?.ActiveProfile?.CameraSettings?.PixelSize ?? 0;
+                double focalLength = profileService?.ActiveProfile?.TelescopeSettings?.FocalLength ?? 0;
+
+                if (guiderScale > 0 && pixelSize > 0 && focalLength > 0) {
+                    double mainScale = 206.265 * pixelSize / focalLength;
+                    double ratio = guiderScale / mainScale;
+                    if (ratio > 0.01 && ratio < 100) {
+                        pixelScaleRatioSource = ninaGuiderPixelScale > 0 ? "auto/NINA" : "auto/PHD2";
+                        hasLoggedRatioFallback = false;
+                        return ratio;
+                    }
+                    Logger.Warning($"Implausible pixel scale ratio {ratio:F2} (guider {guiderScale:F2}\"/px, main {mainScale:F2}\"/px), using 1.0");
+                } else if (!hasLoggedRatioFallback) {
+                    Logger.Info($"Pixel scale ratio fallback (1.0). Missing: " +
+                        $"guiderScale={(guiderScale > 0 ? guiderScale.ToString("F2") : "n/a (guider not connected in NINA?)")}, " +
+                        $"pixelSize={(pixelSize > 0 ? pixelSize.ToString("F2") : "n/a (set camera pixel size in NINA options!)")}, " +
+                        $"focalLength={(focalLength > 0 ? focalLength.ToString("F0") : "n/a (set telescope focal length in NINA options!)")}");
+                    hasLoggedRatioFallback = true;
+                }
+            } catch (Exception ex) {
+                Logger.Warning($"Could not derive pixel scale ratio: {ex.Message}");
+            }
+            pixelScaleRatioSource = "fallback";
+            return 1.0;
+        }
+
+        private void LoadQualityMetricSettings() {
+            try {
+                if (!System.IO.File.Exists(QualityMetricSettingsFilePath)) return;
+
+                foreach (var line in System.IO.File.ReadAllLines(QualityMetricSettingsFilePath)) {
+                    var parts = line.Split('=');
+                    if (parts.Length != 2) continue;
+                    if (!double.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double value)) continue;
+
+                    switch (parts[0].Trim()) {
+                        case "pixfrac":
+                            if (value > 0 && value <= 1.0) qualityPixfrac = value;
+                            break;
+                        case "scaleRatioOverride":
+                            if (value >= 0) pixelScaleRatioOverride = value;
+                            break;
+                    }
+                }
+                Logger.Info($"Quality metric settings loaded: pixfrac={qualityPixfrac:F2}, scaleRatioOverride={pixelScaleRatioOverride:F2}");
+            } catch (Exception ex) {
+                Logger.Error($"Error loading quality metric settings: {ex.Message}");
+            }
+        }
+
+        private void SaveQualityMetricSettings() {
+            try {
+                var directory = System.IO.Path.GetDirectoryName(QualityMetricSettingsFilePath);
+                if (!System.IO.Directory.Exists(directory)) {
+                    System.IO.Directory.CreateDirectory(directory);
+                }
+
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                System.IO.File.WriteAllText(QualityMetricSettingsFilePath,
+                    $"pixfrac={qualityPixfrac.ToString(ci)}\nscaleRatioOverride={pixelScaleRatioOverride.ToString(ci)}");
+            } catch (Exception ex) {
+                Logger.Error($"Error saving quality metric settings: {ex.Message}");
+            }
+        }
+
         #endregion
 
         #region Properties - Dither Settings Optimizer
@@ -531,7 +671,12 @@ namespace DitherStatistics.Plugin {
                 if (value) {
                     // Snapshot the current state immediately so a restart right after enabling restores it
                     SaveStatisticsData();
+                    // Flush the inactive profiles too so ALL profiles land on disk
+                    foreach (var entry in profileStore) {
+                        SaveProfileDataToFile(entry.Key, entry.Value);
+                    }
                 } else {
+                    // Delete all files; in-memory data (including inactive profiles) is kept
                     DeleteStatisticsData();
                 }
             }
@@ -586,36 +731,14 @@ namespace DitherStatistics.Plugin {
         }
 
         /// <summary>
-        /// Persist the complete statistics state to disk.
+        /// Persist the complete statistics state of the ACTIVE profile to disk.
         /// Called after every completed dither, on Clear Data and on shutdown,
         /// so the data file always mirrors the current view.
         /// </summary>
         private void SaveStatisticsData() {
             if (!isStatisticsPersistenceEnabled) return;
-            try {
-                lock (persistenceLock) {
-                    var data = new PersistedStatisticsData {
-                        DitherEvents = ditherEvents.ToList(),
-                        SettleTimeValues = settleTimeValues.ToList(),
-                        PixelShiftValues = pixelShiftValues.ToList(),
-                        CumulativeX = cumulativeX,
-                        CumulativeY = cumulativeY,
-                        OptimizerData = phd2Client?.GetDitherAnalysisSnapshot(),
-                        Recommendation = Recommendation
-                    };
-
-                    var directory = System.IO.Path.GetDirectoryName(StatisticsDataFilePath);
-                    if (!System.IO.Directory.Exists(directory)) {
-                        System.IO.Directory.CreateDirectory(directory);
-                    }
-
-                    var json = System.Text.Json.JsonSerializer.Serialize(data);
-                    System.IO.File.WriteAllText(StatisticsDataFilePath, json);
-                }
-                Logger.Debug($"Statistics data persisted ({ditherEvents.Count} dither events)");
-            } catch (Exception ex) {
-                Logger.Error($"Error saving statistics data: {ex.Message}");
-            }
+            SaveProfileDataToFile(selectedProfileName, BuildCurrentSnapshot());
+            Logger.Debug($"Statistics data persisted ({ditherEvents.Count} dither events, profile '{selectedProfileName}')");
         }
 
         /// <summary>
@@ -626,12 +749,13 @@ namespace DitherStatistics.Plugin {
         private void RestoreStatisticsData() {
             if (!isStatisticsPersistenceEnabled) return;
             try {
-                if (!System.IO.File.Exists(StatisticsDataFilePath)) {
+                var dataFilePath = GetProfileDataFilePath(selectedProfileName);
+                if (!System.IO.File.Exists(dataFilePath)) {
                     Logger.Info("Statistics persistence enabled but no data file found - starting with empty statistics");
                     return;
                 }
 
-                var json = System.IO.File.ReadAllText(StatisticsDataFilePath);
+                var json = System.IO.File.ReadAllText(dataFilePath);
                 var data = System.Text.Json.JsonSerializer.Deserialize<PersistedStatisticsData>(json);
                 if (data == null) return;
 
@@ -668,14 +792,366 @@ namespace DitherStatistics.Plugin {
         private void DeleteStatisticsData() {
             try {
                 lock (persistenceLock) {
+                    // Legacy single data file (pre-1.5)
                     if (System.IO.File.Exists(StatisticsDataFilePath)) {
                         System.IO.File.Delete(StatisticsDataFilePath);
                     }
+                    DeleteAllProfileDataFiles();
                 }
-                Logger.Info("Persisted statistics data deleted (persistence disabled)");
+                Logger.Info("Persisted statistics data deleted (all profiles)");
             } catch (Exception ex) {
                 Logger.Error($"Error deleting statistics data: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Delete every per-profile data file. Caller must hold persistenceLock.
+        /// </summary>
+        private static void DeleteAllProfileDataFiles() {
+            if (!System.IO.Directory.Exists(ProfilesDirectory)) return;
+            foreach (var file in System.IO.Directory.GetFiles(ProfilesDirectory, "*.json")) {
+                System.IO.File.Delete(file);
+            }
+        }
+
+        #endregion
+
+        #region Properties - Statistics Profiles
+
+        public const string DefaultProfileName = "Default";
+
+        // Per-profile data files live here, one <name>.json per profile
+        private static readonly string ProfilesDirectory = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "NINA", "DitherStatistics", "profiles"
+        );
+
+        // Settings file path for the multi-profile toggle
+        private static readonly string MultiProfileSettingsFilePath = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "NINA", "DitherStatistics", "multiprofile_settings.txt"
+        );
+
+        // Profile names + selection (line 1 = selected, remaining lines = all names).
+        // Names are settings and survive restarts even when data persistence is off.
+        private static readonly string ProfileListFilePath = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "NINA", "DitherStatistics", "profiles_list.txt"
+        );
+
+        // Inactive profiles keep their data here for the duration of the session,
+        // so switching away and back never loses data even with persistence off
+        private readonly Dictionary<string, PersistedStatisticsData> profileStore =
+            new Dictionary<string, PersistedStatisticsData>(StringComparer.OrdinalIgnoreCase);
+
+        public ObservableCollection<string> ProfileNames { get; } =
+            new ObservableCollection<string> { DefaultProfileName };
+
+        private bool isMultiProfileEnabled;
+        public bool IsMultiProfileEnabled {
+            get => isMultiProfileEnabled;
+            set {
+                if (isMultiProfileEnabled == value) return;
+                isMultiProfileEnabled = value;
+                RaisePropertyChanged();
+                SaveMultiProfileSetting();
+
+                if (!value && !string.Equals(selectedProfileName, DefaultProfileName, StringComparison.OrdinalIgnoreCase)) {
+                    // Turning the feature off returns to the Default profile;
+                    // other profiles keep their data in the store/files for re-enabling
+                    SelectedProfileName = DefaultProfileName;
+                }
+            }
+        }
+
+        private string selectedProfileName = DefaultProfileName;
+        public string SelectedProfileName {
+            get => selectedProfileName;
+            set {
+                // An editable ComboBox can push null or partial text while the user types
+                if (string.IsNullOrWhiteSpace(value)) return;
+                var known = ProfileNames.FirstOrDefault(n => string.Equals(n, value, StringComparison.OrdinalIgnoreCase));
+                if (known == null) return;
+                if (string.Equals(selectedProfileName, known, StringComparison.OrdinalIgnoreCase)) return;
+
+                SwitchToProfile(known);
+                RaisePropertyChanged();
+                SaveProfileListSetting();
+                ProfileNameInput = known;
+            }
+        }
+
+        private string profileNameInput = DefaultProfileName;
+        public string ProfileNameInput {
+            get => profileNameInput;
+            set {
+                profileNameInput = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        private static string SanitizeProfileName(string name) {
+            if (name == null) return null;
+            var result = name.Trim();
+            foreach (var c in System.IO.Path.GetInvalidFileNameChars()) {
+                result = result.Replace(c, '_');
+            }
+            if (result.Length > 50) {
+                result = result.Substring(0, 50);
+            }
+            return result.Length == 0 ? null : result;
+        }
+
+        private static string GetProfileDataFilePath(string profileName) {
+            return System.IO.Path.Combine(ProfilesDirectory, SanitizeProfileName(profileName) + ".json");
+        }
+
+        private void LoadMultiProfileSetting() {
+            try {
+                if (System.IO.File.Exists(MultiProfileSettingsFilePath)) {
+                    var content = System.IO.File.ReadAllText(MultiProfileSettingsFilePath).Trim();
+                    if (bool.TryParse(content, out bool value)) {
+                        // Set the backing field directly - the setter would trigger a profile switch
+                        isMultiProfileEnabled = value;
+                        RaisePropertyChanged(nameof(IsMultiProfileEnabled));
+                        Logger.Info($"Multi-profile setting loaded from file: {isMultiProfileEnabled}");
+                        return;
+                    }
+                }
+                isMultiProfileEnabled = false;
+                Logger.Info("Multi-profile setting file not found, using default: OFF");
+            } catch (Exception ex) {
+                Logger.Error($"Error loading multi-profile setting: {ex.Message}");
+                isMultiProfileEnabled = false;
+            }
+        }
+
+        private void SaveMultiProfileSetting() {
+            try {
+                var directory = System.IO.Path.GetDirectoryName(MultiProfileSettingsFilePath);
+                if (!System.IO.Directory.Exists(directory)) {
+                    System.IO.Directory.CreateDirectory(directory);
+                }
+                System.IO.File.WriteAllText(MultiProfileSettingsFilePath, isMultiProfileEnabled.ToString());
+                Logger.Info($"Multi-profile setting saved to file: {isMultiProfileEnabled}");
+            } catch (Exception ex) {
+                Logger.Error($"Error saving multi-profile setting: {ex.Message}");
+            }
+        }
+
+        private void LoadProfileListSetting() {
+            try {
+                var names = new List<string>();
+                string selected = DefaultProfileName;
+
+                if (System.IO.File.Exists(ProfileListFilePath)) {
+                    var lines = System.IO.File.ReadAllLines(ProfileListFilePath)
+                        .Select(l => l.Trim())
+                        .Where(l => l.Length > 0)
+                        .ToList();
+                    if (lines.Count > 0) {
+                        selected = lines[0];
+                        names.AddRange(lines.Skip(1));
+                    }
+                }
+
+                // Self-heal from existing profile data files when persistence is on
+                if (isStatisticsPersistenceEnabled && System.IO.Directory.Exists(ProfilesDirectory)) {
+                    foreach (var file in System.IO.Directory.GetFiles(ProfilesDirectory, "*.json")) {
+                        names.Add(System.IO.Path.GetFileNameWithoutExtension(file));
+                    }
+                }
+
+                ProfileNames.Clear();
+                ProfileNames.Add(DefaultProfileName);
+                foreach (var name in names) {
+                    if (!ProfileNames.Any(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase))) {
+                        ProfileNames.Add(name);
+                    }
+                }
+
+                var match = ProfileNames.FirstOrDefault(n => string.Equals(n, selected, StringComparison.OrdinalIgnoreCase));
+                // Backing field only - no switch during construction; force Default when the feature is off
+                selectedProfileName = isMultiProfileEnabled ? (match ?? DefaultProfileName) : DefaultProfileName;
+                profileNameInput = selectedProfileName;
+                Logger.Info($"Profile list loaded: {ProfileNames.Count} profile(s), selected '{selectedProfileName}'");
+            } catch (Exception ex) {
+                Logger.Error($"Error loading profile list: {ex.Message}");
+                ProfileNames.Clear();
+                ProfileNames.Add(DefaultProfileName);
+                selectedProfileName = DefaultProfileName;
+                profileNameInput = DefaultProfileName;
+            }
+        }
+
+        private void SaveProfileListSetting() {
+            try {
+                var directory = System.IO.Path.GetDirectoryName(ProfileListFilePath);
+                if (!System.IO.Directory.Exists(directory)) {
+                    System.IO.Directory.CreateDirectory(directory);
+                }
+                var lines = new List<string> { selectedProfileName };
+                lines.AddRange(ProfileNames);
+                System.IO.File.WriteAllLines(ProfileListFilePath, lines);
+            } catch (Exception ex) {
+                Logger.Error($"Error saving profile list: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// One-time migration of the v1.4 single data file into the per-profile layout.
+        /// </summary>
+        private void MigrateLegacyStatisticsFile() {
+            try {
+                lock (persistenceLock) {
+                    if (!System.IO.File.Exists(StatisticsDataFilePath)) return;
+                    if (!System.IO.Directory.Exists(ProfilesDirectory)) {
+                        System.IO.Directory.CreateDirectory(ProfilesDirectory);
+                    }
+                    var target = GetProfileDataFilePath(DefaultProfileName);
+                    if (!System.IO.File.Exists(target)) {
+                        System.IO.File.Move(StatisticsDataFilePath, target);
+                        Logger.Info("Migrated legacy statistics_data.json to profiles\\Default.json");
+                    } else {
+                        System.IO.File.Delete(StatisticsDataFilePath);
+                        Logger.Info("Deleted legacy statistics_data.json (Default profile file already exists)");
+                    }
+                }
+            } catch (Exception ex) {
+                Logger.Error($"Error migrating legacy statistics data file: {ex.Message}");
+            }
+        }
+
+        private PersistedStatisticsData BuildCurrentSnapshot() {
+            return new PersistedStatisticsData {
+                DitherEvents = ditherEvents.ToList(),
+                SettleTimeValues = settleTimeValues.ToList(),
+                PixelShiftValues = pixelShiftValues.ToList(),
+                CumulativeX = cumulativeX,
+                CumulativeY = cumulativeY,
+                OptimizerData = phd2Client?.GetDitherAnalysisSnapshot(),
+                Recommendation = Recommendation
+            };
+        }
+
+        /// <summary>
+        /// Switch the live statistics to another profile. UI thread only - called
+        /// from property setters and commands, which WPF bindings run on the UI thread.
+        /// A dither in flight (currentDither) deliberately survives the switch and
+        /// lands in the newly selected profile.
+        /// </summary>
+        private void SwitchToProfile(string newName) {
+            var snapshot = BuildCurrentSnapshot();
+            profileStore[selectedProfileName] = snapshot;
+            if (isStatisticsPersistenceEnabled) {
+                SaveProfileDataToFile(selectedProfileName, snapshot);
+            }
+
+            selectedProfileName = newName;
+            if (phd2Client != null) {
+                phd2Client.CurrentProfileName = newName;
+            }
+
+            if (!profileStore.TryGetValue(newName, out var data)) {
+                data = null;
+                if (isStatisticsPersistenceEnabled) {
+                    try {
+                        var path = GetProfileDataFilePath(newName);
+                        if (System.IO.File.Exists(path)) {
+                            lock (persistenceLock) {
+                                var json = System.IO.File.ReadAllText(path);
+                                data = System.Text.Json.JsonSerializer.Deserialize<PersistedStatisticsData>(json);
+                            }
+                        }
+                    } catch (Exception ex) {
+                        Logger.Error($"Error loading profile '{newName}' from file: {ex.Message}");
+                        data = null;
+                    }
+                }
+                data ??= new PersistedStatisticsData();
+            }
+
+            ditherEvents.Clear();
+            foreach (var evt in data.DitherEvents ?? new List<DitherEvent>()) {
+                ditherEvents.Add(evt);
+            }
+            settleTimeValues.Clear();
+            settleTimeValues.AddRange(data.SettleTimeValues ?? new List<double>());
+            pixelShiftValues.Clear();
+            pixelShiftValues.AddRange(data.PixelShiftValues ?? new List<PixelShiftPoint>());
+            cumulativeX = data.CumulativeX;
+            cumulativeY = data.CumulativeY;
+
+            // Clear first: RestoreDitherAnalysisData returns early on empty snapshots and
+            // never clears, so the previous profile's optimizer data would leak otherwise
+            phd2Client?.ClearDitherAnalysisData();
+            phd2Client?.RestoreDitherAnalysisData(data.OptimizerData);
+            Recommendation = data.Recommendation;
+
+            UpdateSettleTimeChart();
+            UpdatePixelShiftChart();
+            UpdateStatistics();
+            UpdateQualityMetrics();
+
+            Logger.Info($"Switched to statistics profile '{newName}' ({ditherEvents.Count} dither events)");
+        }
+
+        private void SaveProfileDataToFile(string profileName, PersistedStatisticsData data) {
+            try {
+                lock (persistenceLock) {
+                    if (!System.IO.Directory.Exists(ProfilesDirectory)) {
+                        System.IO.Directory.CreateDirectory(ProfilesDirectory);
+                    }
+                    var json = System.Text.Json.JsonSerializer.Serialize(data);
+                    System.IO.File.WriteAllText(GetProfileDataFilePath(profileName), json);
+                }
+            } catch (Exception ex) {
+                Logger.Error($"Error saving profile '{profileName}' data: {ex.Message}");
+            }
+        }
+
+        private void CreateProfile() {
+            var name = SanitizeProfileName(ProfileNameInput);
+            if (name == null) {
+                Logger.Warning("Cannot create profile: name is empty or invalid");
+                return;
+            }
+
+            // Compare sanitized names so two different names cannot collide on the same file
+            var existing = ProfileNames.FirstOrDefault(n =>
+                string.Equals(SanitizeProfileName(n), name, StringComparison.OrdinalIgnoreCase));
+            if (existing != null) {
+                SelectedProfileName = existing;
+                return;
+            }
+
+            ProfileNames.Add(name);
+            SelectedProfileName = name;
+            Logger.Info($"Created statistics profile '{name}'");
+        }
+
+        private void DeleteProfile() {
+            if (string.Equals(selectedProfileName, DefaultProfileName, StringComparison.OrdinalIgnoreCase)) {
+                Logger.Warning("The Default profile cannot be deleted");
+                return;
+            }
+
+            var victim = selectedProfileName;
+            SelectedProfileName = DefaultProfileName;
+            profileStore.Remove(victim);
+            ProfileNames.Remove(victim);
+            try {
+                lock (persistenceLock) {
+                    var path = GetProfileDataFilePath(victim);
+                    if (System.IO.File.Exists(path)) {
+                        System.IO.File.Delete(path);
+                    }
+                }
+            } catch (Exception ex) {
+                Logger.Error($"Error deleting data file of profile '{victim}': {ex.Message}");
+            }
+            SaveProfileListSetting();
+            Logger.Info($"Deleted statistics profile '{victim}'");
         }
 
         #endregion
@@ -696,11 +1172,12 @@ namespace DitherStatistics.Plugin {
                 RaisePropertyChanged(nameof(GFM1xValue));
                 RaisePropertyChanged(nameof(GFM2xValue));
                 RaisePropertyChanged(nameof(GFM3xValue));
-                RaisePropertyChanged(nameof(VoronoiValue));
-                RaisePropertyChanged(nameof(VoronoiRating));
                 RaisePropertyChanged(nameof(CombinedScoreValue));
                 RaisePropertyChanged(nameof(NNIValue));
                 RaisePropertyChanged(nameof(NNIRating));
+                RaisePropertyChanged(nameof(DriftValue));
+                RaisePropertyChanged(nameof(DriftRating));
+                RaisePropertyChanged(nameof(EffectiveScaleRatioText));
             }
         }
 
@@ -741,12 +1218,16 @@ namespace DitherStatistics.Plugin {
         public string GFM2xTarget => $"Target: {DitherQualityMetrics.QualityThresholds.GFM_Target_2x:P0}";
         public string GFM3xTarget => $"Target: {DitherQualityMetrics.QualityThresholds.GFM_Target_3x:P0}";
 
-        public string VoronoiValue => QualityResult != null
-            ? $"{QualityResult.VoronoiCV:F3}"
+        public string DriftValue => QualityResult != null
+            ? $"{QualityResult.DriftRatio:F2}"
             : "N/A";
 
-        public string VoronoiRating => QualityResult != null
-            ? GetVoronoiRatingShort(QualityResult.VoronoiCV)
+        public string DriftRating => QualityResult != null
+            ? GetDriftRatingShort(QualityResult.DriftRatio)
+            : "";
+
+        public string EffectiveScaleRatioText => QualityResult != null
+            ? $"scale ratio {QualityResult.PixelScaleRatio:F2} ({pixelScaleRatioSource}{(pixelScaleRatioSource == "fallback" ? " - connect guider in NINA & set focal length + camera pixel size in the profile options" : "")}), pixfrac {QualityResult.Pixfrac:F2}"
             : "";
 
         public string CombinedScoreValue => QualityResult != null
@@ -769,12 +1250,16 @@ namespace DitherStatistics.Plugin {
         public ICommand ExportDitherEventsCsvCommand { get; private set; }
         public ICommand RecalculateMetricsCommand { get; private set; }
         public ICommand ExportMetricsCommand { get; private set; }
+        public ICommand CreateProfileCommand { get; private set; }
+        public ICommand DeleteProfileCommand { get; private set; }
 
         private void InitializeCommands() {
             ClearDataCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ClearData);
             ExportDitherEventsCsvCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ExportDitherEventsCsv);
             RecalculateMetricsCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(RecalculateQualityMetrics);
             ExportMetricsCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ExportQualityMetrics);
+            CreateProfileCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(CreateProfile);
+            DeleteProfileCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(DeleteProfile);
         }
 
         private void ClearData() {
@@ -789,6 +1274,17 @@ namespace DitherStatistics.Plugin {
             // Clear dither optimizer data and recommendation
             phd2Client?.ClearDitherAnalysisData();
             Recommendation = null;
+
+            // Clear ALL profiles, not only the active one (memory + files);
+            // the profile names and the selection are kept
+            profileStore.Clear();
+            try {
+                lock (persistenceLock) {
+                    DeleteAllProfileDataFiles();
+                }
+            } catch (Exception ex) {
+                Logger.Error($"Error deleting profile data files: {ex.Message}");
+            }
 
             UpdateSettleTimeChart();
             UpdatePixelShiftChart();
@@ -949,45 +1445,47 @@ namespace DitherStatistics.Plugin {
 
         private void OnPHD2SettleDone(object sender, PHD2SettleDoneEventArgs e) {
             try {
-                if (currentDither == null) {
+                var dither = currentDither;
+                if (dither == null) {
                     Logger.Warning("⚠️ SettleDone received but no currentDither exists (race condition?)");
                     return;
                 }
 
-                currentDither.EndTime = DateTime.Now;
-                currentDither.Success = e.Success;
+                dither.EndTime = DateTime.Now;
+                dither.Success = e.Success;
 
-                if (currentDither.EndTime.HasValue) {
-                    currentDither.SettleTime = (currentDither.EndTime.Value - currentDither.StartTime).TotalSeconds;
+                if (dither.EndTime.HasValue) {
+                    dither.SettleTime = (dither.EndTime.Value - dither.StartTime).TotalSeconds;
                 }
 
-                // Update cumulative position
-                if (currentDither.PixelShiftX.HasValue && currentDither.PixelShiftY.HasValue) {
-                    cumulativeX += currentDither.PixelShiftX.Value;
-                    cumulativeY += currentDither.PixelShiftY.Value;
-                    currentDither.CumulativeX = cumulativeX;
-                    currentDither.CumulativeY = cumulativeY;
-                }
-
-                // Add to events collection
-                ditherEvents.Add(currentDither);
-
-                Logger.Info($"✅ DITHER END - Success={e.Success}, SettleTime={currentDither.SettleTime:F2}s, " +
+                Logger.Info($"✅ DITHER END - Success={e.Success}, SettleTime={dither.SettleTime:F2}s, " +
                     $"TotalFrames={e.TotalFrames}, DroppedFrames={e.DroppedFrames}");
 
-                // Update charts and statistics (must be on UI thread)
+                // All live-state mutation happens on the UI thread (Invoke is synchronous),
+                // so it is serialized with profile switches which also run on the UI thread
                 Application.Current?.Dispatcher.Invoke(() => {
-                    if (currentDither.Success && currentDither.SettleTime.HasValue) {
-                        settleTimeValues.Add(currentDither.SettleTime.Value);
+                    // Update cumulative position
+                    if (dither.PixelShiftX.HasValue && dither.PixelShiftY.HasValue) {
+                        cumulativeX += dither.PixelShiftX.Value;
+                        cumulativeY += dither.PixelShiftY.Value;
+                        dither.CumulativeX = cumulativeX;
+                        dither.CumulativeY = cumulativeY;
+                    }
+
+                    // Add to events collection
+                    ditherEvents.Add(dither);
+
+                    if (dither.Success && dither.SettleTime.HasValue) {
+                        settleTimeValues.Add(dither.SettleTime.Value);
                         UpdateSettleTimeChart();
                     }
 
-                    if (currentDither.PixelShiftX.HasValue && currentDither.PixelShiftY.HasValue) {
+                    if (dither.PixelShiftX.HasValue && dither.PixelShiftY.HasValue) {
                         pixelShiftValues.Add(new PixelShiftPoint(
                             cumulativeX,
                             cumulativeY,
-                            currentDither.PixelShiftX.Value,
-                            currentDither.PixelShiftY.Value
+                            dither.PixelShiftX.Value,
+                            dither.PixelShiftY.Value
                         ));
                         UpdatePixelShiftChart();
                     }
@@ -1019,9 +1517,22 @@ namespace DitherStatistics.Plugin {
             }
         }
 
+        // Latest guider pixel scale (arcsec/px) pushed by NINA; primary source for
+        // the guider->main-camera conversion of the quality metrics
+        private double ninaGuiderPixelScale = 0.0;
+
         public void UpdateDeviceInfo(GuiderInfo deviceInfo) {
-            // Optional: Monitor NINA guider connection status
             Logger.Debug($"Guider info updated: {deviceInfo?.Name ?? "None"}");
+
+            double scale = deviceInfo?.Connected == true ? deviceInfo.PixelScale : 0.0;
+            if (scale > 0 && Math.Abs(scale - ninaGuiderPixelScale) > 0.001) {
+                ninaGuiderPixelScale = scale;
+                Logger.Info($"Guider pixel scale from NINA: {scale:F2} arcsec/px");
+
+                // Refresh the quality panel so the ratio switches away from fallback
+                // without waiting for the next dither
+                Application.Current?.Dispatcher.BeginInvoke(new Action(UpdateQualityMetrics));
+            }
         }
 
         #endregion
@@ -1040,13 +1551,14 @@ namespace DitherStatistics.Plugin {
             }
 
             try {
-                // Extract cumulative positions (X, Y) from PixelShiftValues
+                // Extract cumulative positions (X, Y) from PixelShiftValues (guide camera px)
                 var positions = pixelShiftValues
                     .Select(p => (p.X, p.Y))
                     .ToList();
 
-                QualityResult = DitherQualityMetrics.CalculateQualityMetrics(positions);
-                Logger.Info($"Quality metrics updated: Score={QualityResult.CombinedScore:F4}, Rating={QualityResult.QualityRating}");
+                double ratio = GetPixelScaleRatio();
+                QualityResult = DitherQualityMetrics.CalculateQualityMetrics(positions, QualityPixfrac, ratio);
+                Logger.Info($"Quality metrics updated: Score={QualityResult.CombinedScore:F4}, Rating={QualityResult.QualityRating}, ScaleRatio={ratio:F2}, Pixfrac={QualityPixfrac:F2}");
 
             } catch (Exception ex) {
                 Logger.Error($"Error calculating quality metrics: {ex.Message}");
@@ -1064,13 +1576,11 @@ namespace DitherStatistics.Plugin {
             return "Poor";
         }
 
-        private string GetVoronoiRatingShort(double cv) {
-            // Uses centralized thresholds from DitherQualityMetrics.QualityThresholds
-            if (cv < DitherQualityMetrics.QualityThresholds.VoronoiCV_Excellent) return "Excellent";
-            if (cv < DitherQualityMetrics.QualityThresholds.VoronoiCV_Good) return "Good";
-            if (cv < DitherQualityMetrics.QualityThresholds.VoronoiCV_Acceptable) return "Acceptable";
-            if (cv < DitherQualityMetrics.QualityThresholds.VoronoiCV_Fair) return "Fair";
-            return "Poor";
+        private string GetDriftRatingShort(double driftRatio) {
+            if (driftRatio < 0.2) return "Stable";
+            if (driftRatio < 0.4) return "Low drift";
+            if (driftRatio < DitherQualityMetrics.QualityThresholds.DriftRatio_Warning) return "Moderate";
+            return "High drift!";
         }
 
         private string GetNNIRatingShort(double nni) {
@@ -1481,6 +1991,14 @@ namespace DitherStatistics.Plugin {
             try {
                 // Persist final statistics state before shutdown
                 SaveStatisticsData();
+
+                // Defensive: flush the inactive profiles too (normally already
+                // written at switch time)
+                if (isStatisticsPersistenceEnabled) {
+                    foreach (var entry in profileStore) {
+                        SaveProfileDataToFile(entry.Key, entry.Value);
+                    }
+                }
 
                 // Stop theme color monitoring timer
                 if (themeColorTimer != null) {

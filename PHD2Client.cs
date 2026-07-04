@@ -72,6 +72,10 @@ namespace DitherStatistics.Plugin {
         private bool isCollectingDitherData = false;
         private int ditherSeriesCounter = 0;  // Counter to identify dither series
 
+        // Name of the statistics profile the collected data belongs to; set by the VM
+        // on profile switches, used to keep the diagnostic export files separate per profile
+        public string CurrentProfileName { get; set; } = "Default";
+
         // Stored results from AnalyzePositivePeriods for CalculateRecommendation
         private Dictionary<double, Dictionary<int, PositivePeriod>> lastFirstPeriodPerSeriesAll;
 
@@ -119,10 +123,11 @@ namespace DitherStatistics.Plugin {
                 Logger.Info("PHD2Client: Connected successfully!");
                 ConnectionStatusChanged?.Invoke(this, "Connected");
 
-                // Query initial exposure time
+                // Query initial exposure time and guider pixel scale
                 _ = Task.Run(async () => {
                     await Task.Delay(1000); // Wait for PHD2 to be ready
                     await QueryExposureTime();
+                    await QueryPixelScale();
                 });
 
                 return true;
@@ -327,6 +332,12 @@ namespace DitherStatistics.Plugin {
 
         private void HandleSettleDone(JsonElement root) {
             try {
+                // The pixel scale query right after connect fails if PHD2 was not yet
+                // calibrated; keep retrying at each settled dither until we have it
+                if (GuiderPixelScaleArcsec == null && IsConnected) {
+                    _ = Task.Run(QueryPixelScale);
+                }
+
                 int status = root.GetProperty("Status").GetInt32();
                 int totalFrames = root.GetProperty("TotalFrames").GetInt32();
                 int droppedFrames = root.GetProperty("DroppedFrames").GetInt32();
@@ -598,6 +609,14 @@ namespace DitherStatistics.Plugin {
                 lock (ditherDataLock) {
                     dataSnapshot = new List<DitherDataPoint>(allDitherData);
                 }
+                // Capture together with the snapshot so the export file is labeled
+                // with the profile the data actually belongs to
+                string profileName = CurrentProfileName;
+
+                // Series id 0 marks orphaned points from a collection window that spanned
+                // a profile switch (data written before this safeguard existed); they have
+                // no dither event and would skew the analysis
+                dataSnapshot.RemoveAll(p => p.DitherSeriesId <= 0);
 
                 if (dataSnapshot.Count == 0) {
                     Logger.Info("PHD2Client: RunAnalysisAndRecommendation - no data yet");
@@ -627,10 +646,10 @@ namespace DitherStatistics.Plugin {
                 }
 
                 // Write analysis file
-                WriteDitherAnalysisFile(dataSnapshot, runningRMS, rmsStdDev);
+                WriteDitherAnalysisFile(dataSnapshot, runningRMS, rmsStdDev, profileName);
 
                 // Analyze positive periods (stores results in lastFirstPeriodPerSeriesAll)
-                AnalyzePositivePeriods(dataSnapshot, runningRMS, rmsStdDev);
+                AnalyzePositivePeriods(dataSnapshot, runningRMS, rmsStdDev, profileName);
 
                 // Calculate and fire recommendation
                 CalculateRecommendation(dataSnapshot, lastFirstPeriodPerSeriesAll, runningRMS, rmsStdDev);
@@ -674,7 +693,7 @@ namespace DitherStatistics.Plugin {
         /// Format: Header with running_RMS and RMS_StdDev, then data lines with dx, dy, PairRMS, and multiple AnalysisValues
         /// AnalysisValue_X = running_RMS + X*RMS_StdDev - PairRMS (for each multiplier)
         /// </summary>
-        private void WriteDitherAnalysisFile(List<DitherDataPoint> data, double runningRMS, double rmsStdDev) {
+        private void WriteDitherAnalysisFile(List<DitherDataPoint> data, double runningRMS, double rmsStdDev, string profileName) {
             try {
                 if (data.Count == 0) {
                     Logger.Info("PHD2Client: No dither data to write");
@@ -693,9 +712,9 @@ namespace DitherStatistics.Plugin {
                     Directory.CreateDirectory(dirPath);
                 }
 
-                // Use session-specific filename for dither analysis
+                // One file per guiding session AND profile, containing only that profile's data
                 string sessionTimestamp = sessionStartTime.ToString("yyyyMMdd_HHmmss");
-                string fileName = $"{sessionTimestamp}_dither_analysis.txt";
+                string fileName = $"{sessionTimestamp}_{SanitizeForFileName(profileName)}_dither_analysis.txt";
                 string filePath = Path.Combine(dirPath, fileName);
 
                 // Write file (overwrite)
@@ -750,7 +769,7 @@ namespace DitherStatistics.Plugin {
         /// If series ends with positive values, those are NOT counted (no negative value after)
         /// For each dither series, only the longest valid period is kept
         /// </summary>
-        private void AnalyzePositivePeriods(List<DitherDataPoint> data, double runningRMS, double rmsStdDev) {
+        private void AnalyzePositivePeriods(List<DitherDataPoint> data, double runningRMS, double rmsStdDev, string profileName) {
             try {
                 if (data.Count == 0) {
                     Logger.Info("PHD2Client: No dither data to analyze for positive periods");
@@ -862,7 +881,7 @@ namespace DitherStatistics.Plugin {
                 }
 
                 // Write to file
-                WritePositivePeriodsFile(allPositivePeriods, runningRMS, rmsStdDev);
+                WritePositivePeriodsFile(allPositivePeriods, runningRMS, rmsStdDev, profileName);
 
                 // Store results for CalculateRecommendation (called separately in OnDitherCollectionComplete)
                 lastFirstPeriodPerSeriesAll = firstPeriodPerSeriesAll;
@@ -877,7 +896,7 @@ namespace DitherStatistics.Plugin {
         /// <summary>
         /// Write positive periods analysis to file for all multipliers
         /// </summary>
-        private void WritePositivePeriodsFile(Dictionary<double, List<PositivePeriod>> allPositivePeriods, double runningRMS, double rmsStdDev) {
+        private void WritePositivePeriodsFile(Dictionary<double, List<PositivePeriod>> allPositivePeriods, double runningRMS, double rmsStdDev, string profileName) {
             try {
                 // Create directory path
                 string dirPath = Path.Combine(
@@ -891,9 +910,9 @@ namespace DitherStatistics.Plugin {
                     Directory.CreateDirectory(dirPath);
                 }
 
-                // Use session-specific filename for positive periods analysis
+                // One file per guiding session AND profile, containing only that profile's data
                 string sessionTimestamp = sessionStartTime.ToString("yyyyMMdd_HHmmss");
-                string fileName = $"{sessionTimestamp}_positive_periods.txt";
+                string fileName = $"{sessionTimestamp}_{SanitizeForFileName(profileName)}_positive_periods.txt";
                 string filePath = Path.Combine(dirPath, fileName);
 
                 // Write file (overwrite)
@@ -1144,10 +1163,20 @@ namespace DitherStatistics.Plugin {
         }
 
         /// <summary>
-        /// Clear all dither optimizer analysis data (Clear Data button)
+        /// Clear all dither optimizer analysis data (Clear Data button, profile switch)
         /// </summary>
         public void ClearDitherAnalysisData() {
             try {
+                // Stop a running collection window - otherwise guide steps arriving after
+                // the clear (e.g. on a profile switch mid-window) would be collected as
+                // an orphaned series 0 in the new context
+                isCollectingDitherData = false;
+                if (ditherCollectionTimer != null) {
+                    ditherCollectionTimer.Stop();
+                    ditherCollectionTimer.Dispose();
+                    ditherCollectionTimer = null;
+                }
+
                 lock (ditherDataLock) {
                     allDitherData.Clear();
                 }
@@ -1158,6 +1187,17 @@ namespace DitherStatistics.Plugin {
             } catch (Exception ex) {
                 Logger.Error($"PHD2Client: Error clearing dither analysis data: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Make a profile name safe for use in the diagnostic export file names
+        /// </summary>
+        private static string SanitizeForFileName(string name) {
+            if (string.IsNullOrWhiteSpace(name)) return "Default";
+            foreach (var c in Path.GetInvalidFileNameChars()) {
+                name = name.Replace(c, '_');
+            }
+            return name;
         }
 
         /// <summary>
@@ -1272,6 +1312,36 @@ namespace DitherStatistics.Plugin {
 
             } catch (Exception ex) {
                 Logger.Debug($"PHD2Client: Could not query exposure time from PHD2 API ({ex.Message}), will use timing calculation");
+            }
+        }
+
+        /// <summary>
+        /// Guider image scale in arcsec/pixel as reported by PHD2 (get_pixel_scale),
+        /// null until successfully queried. Used to convert dither offsets from
+        /// guide-camera pixels to main-camera pixels for the quality metrics.
+        /// </summary>
+        public double? GuiderPixelScaleArcsec { get; private set; }
+
+        /// <summary>
+        /// Query guider pixel scale from PHD2 via JSON-RPC
+        /// </summary>
+        private async Task QueryPixelScale() {
+            try {
+                JsonElement result = await SendJsonRpcRequest("get_pixel_scale");
+
+                if (result.ValueKind == JsonValueKind.Null) {
+                    Logger.Debug("PHD2Client: Pixel scale query returned null (no calibration?)");
+                    return;
+                }
+
+                double scale = result.GetDouble();
+                if (scale > 0) {
+                    GuiderPixelScaleArcsec = scale;
+                    Logger.Info($"PHD2Client: Guider pixel scale from PHD2 API: {scale:F2} arcsec/px");
+                }
+
+            } catch (Exception ex) {
+                Logger.Debug($"PHD2Client: Could not query pixel scale from PHD2 API ({ex.Message})");
             }
         }
 

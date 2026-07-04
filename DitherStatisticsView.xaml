@@ -115,6 +115,103 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- Delete button for statistics profiles - disabled while Default is selected -->
+        <Style x:Key="DeleteProfileButton" TargetType="Button" BasedOn="{StaticResource QualityButton}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedProfileName}" Value="Default">
+                    <Setter Property="IsEnabled" Value="False"/>
+                </DataTrigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.4"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Minimal dark-theme editable ComboBox (no NINA ComboBox style is reachable from the plugin).
+             The PART_EditableTextBox and PART_Popup names are required for editable behavior. -->
+        <Style x:Key="ProfileComboBoxStyle" TargetType="ComboBox">
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource TertiaryBackgroundBrush}"/>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ComboBoxItem">
+                        <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
+                        <Setter Property="Padding" Value="6,3"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ComboBoxItem">
+                                    <Border x:Name="bd" Background="Transparent" Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsHighlighted" Value="True">
+                                            <Setter TargetName="bd" Property="Background"
+                                                    Value="{DynamicResource ButtonBackgroundSelectedBrush}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="border"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{DynamicResource BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="3"/>
+                            <ToggleButton Background="Transparent"
+                                          BorderThickness="0"
+                                          Focusable="False"
+                                          HorizontalAlignment="Stretch"
+                                          ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="Transparent">
+                                            <Path Data="M 0 0 L 4 4 L 8 0 Z"
+                                                  Fill="{DynamicResource PrimaryBrush}"
+                                                  HorizontalAlignment="Right"
+                                                  VerticalAlignment="Center"
+                                                  Margin="0,0,8,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <TextBox x:Name="PART_EditableTextBox"
+                                     Margin="4,0,20,0"
+                                     VerticalAlignment="Center"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Foreground="{DynamicResource PrimaryBrush}"
+                                     CaretBrush="{DynamicResource PrimaryBrush}"
+                                     Focusable="True"
+                                     IsReadOnly="{TemplateBinding IsReadOnly}"/>
+                            <Popup x:Name="PART_Popup"
+                                   AllowsTransparency="True"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   StaysOpen="False">
+                                <Border MinWidth="{TemplateBinding ActualWidth}"
+                                        MaxHeight="200"
+                                        Background="{DynamicResource SecondaryBackgroundBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid Background="{DynamicResource BackgroundBrush}">
@@ -271,32 +368,94 @@
                        Margin="0,0,0,10">
                     <StackPanel>
                         <Grid Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Column="0"
-                                      Text="Statistics"
-                                      FontSize="14"
-                                      FontWeight="SemiBold"
-                                      Foreground="{DynamicResource PrimaryBrush}"
-                                      VerticalAlignment="Center"/>
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
 
-                            <TextBlock Grid.Column="1"
-                                      Text="Keep across sessions"
-                                      FontSize="10"
-                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                      VerticalAlignment="Center"
-                                      Margin="0,0,8,0"/>
+                                <TextBlock Grid.Column="0"
+                                          Text="Statistics"
+                                          FontSize="14"
+                                          FontWeight="SemiBold"
+                                          Foreground="{DynamicResource PrimaryBrush}"
+                                          VerticalAlignment="Center"/>
 
-                            <CheckBox Grid.Column="2"
-                                     IsChecked="{Binding IsStatisticsPersistenceEnabled, Mode=TwoWay}"
-                                     VerticalAlignment="Center"
-                                     Margin="0,0,5,0"
-                                     ToolTip="When enabled, all statistics are saved to disk and restored on the next NINA start, accumulating across sessions"
-                                     Style="{DynamicResource ToggleSwitchStyle}"/>
+                                <TextBlock Grid.Column="1"
+                                          Text="Keep across sessions"
+                                          FontSize="10"
+                                          Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,8,0"/>
+
+                                <CheckBox Grid.Column="2"
+                                         IsChecked="{Binding IsStatisticsPersistenceEnabled, Mode=TwoWay}"
+                                         VerticalAlignment="Center"
+                                         Margin="0,0,5,0"
+                                         ToolTip="When enabled, all statistics are saved to disk and restored on the next NINA start, accumulating across sessions"
+                                         Style="{DynamicResource ToggleSwitchStyle}"/>
+                            </Grid>
+
+                            <!-- Statistics profiles: toggle + editable ComboBox + add/delete -->
+                            <Grid Grid.Row="1" Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0"
+                                          Text="Profiles"
+                                          FontSize="10"
+                                          Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,8,0"/>
+
+                                <CheckBox Grid.Column="1"
+                                         IsChecked="{Binding IsMultiProfileEnabled, Mode=TwoWay}"
+                                         VerticalAlignment="Center"
+                                         Margin="0,0,8,0"
+                                         ToolTip="Store statistics in separate selectable profiles (e.g. per target or telescope)"
+                                         Style="{DynamicResource ToggleSwitchStyle}"/>
+
+                                <ComboBox Grid.Column="2"
+                                         Style="{StaticResource ProfileComboBoxStyle}"
+                                         IsEditable="True"
+                                         ItemsSource="{Binding ProfileNames}"
+                                         SelectedItem="{Binding SelectedProfileName, Mode=TwoWay}"
+                                         Text="{Binding ProfileNameInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         VerticalAlignment="Center"
+                                         MinWidth="110"
+                                         Height="25"
+                                         Visibility="{Binding IsMultiProfileEnabled, Converter={StaticResource BoolToVis}}"
+                                         ToolTip="Select a profile, or type a new name and press +"/>
+
+                                <Button Grid.Column="3"
+                                       Content="&#x2795;"
+                                       Style="{StaticResource QualityButton}"
+                                       Command="{Binding CreateProfileCommand}"
+                                       Margin="5,0,0,0"
+                                       Padding="6,4"
+                                       Visibility="{Binding IsMultiProfileEnabled, Converter={StaticResource BoolToVis}}"
+                                       ToolTip="Create the profile typed in the box"/>
+
+                                <Button Grid.Column="4"
+                                       Content="&#x1F5D1;"
+                                       Style="{StaticResource DeleteProfileButton}"
+                                       Command="{Binding DeleteProfileCommand}"
+                                       Margin="5,0,0,0"
+                                       Padding="6,4"
+                                       Visibility="{Binding IsMultiProfileEnabled, Converter={StaticResource BoolToVis}}"
+                                       ToolTip="Delete the selected profile (Default cannot be deleted)"/>
+                            </Grid>
                         </Grid>
 
                         <Grid>
@@ -454,25 +613,26 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- Voronoi CV -->
+                            <!-- Drift Ratio (walking noise indicator) -->
                             <Border Grid.Column="1"
                                     Background="{DynamicResource TertiaryBackgroundBrush}"
                                     BorderBrush="{DynamicResource BorderBrush}"
                                     BorderThickness="1"
                                     CornerRadius="3"
                                     Padding="8"
-                                    Margin="0,0,4,0">
+                                    Margin="0,0,4,0"
+                                    ToolTip="Drift ratio: net displacement / total path length. 0 = pattern returns to origin, 1 = one-directional drift (walking noise risk)">
                                 <StackPanel>
-                                    <TextBlock Text="VCV*"
+                                    <TextBlock Text="Drift*"
                                               FontSize="9"
                                               Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                               Margin="0,0,0,2"/>
-                                    <TextBlock Text="{Binding VoronoiValue, Mode=OneWay}"
+                                    <TextBlock Text="{Binding DriftValue, Mode=OneWay}"
                                               FontSize="14"
                                               FontWeight="Bold"
                                               Foreground="{DynamicResource PrimaryBrush}"
                                               HorizontalAlignment="Center"/>
-                                    <TextBlock Text="{Binding VoronoiRating, Mode=OneWay}"
+                                    <TextBlock Text="{Binding DriftRating, Mode=OneWay}"
                                               FontSize="10"
                                               Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                               HorizontalAlignment="Center"
@@ -508,7 +668,7 @@
 
                         <!-- Drizzle Gap-Fill Metrics -->
                         <StackPanel Margin="0,0,0,10">
-                            <TextBlock Text="🔬 Drizzle Gap-Fill Prediction (Sub-pixel Coverage)"
+                            <TextBlock Text="🔬 Drizzle Coverage Uniformity (min/mean weight per output pixel)"
                                       FontSize="10"
                                       FontWeight="SemiBold"
                                       Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
@@ -623,6 +783,36 @@
                                           LineHeight="14"/>
                             </StackPanel>
                         </Border>
+
+                        <!-- Metric Settings (pixfrac, pixel scale conversion) -->
+                        <StackPanel Orientation="Horizontal" Margin="2,0,0,8">
+                            <TextBlock Text="pixfrac:"
+                                      FontSize="9"
+                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                      VerticalAlignment="Center"
+                                      Margin="0,0,4,0"/>
+                            <TextBox Text="{Binding QualityPixfrac, StringFormat=F2}"
+                                     Width="36"
+                                     FontSize="9"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,10,0"
+                                     ToolTip="Drizzle pixfrac used for the coverage simulation (0-1, default 0.6)"/>
+                            <TextBlock Text="px ratio (0 = auto):"
+                                      FontSize="9"
+                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                      VerticalAlignment="Center"
+                                      Margin="0,0,4,0"/>
+                            <TextBox Text="{Binding PixelScaleRatioOverride, StringFormat=F2}"
+                                     Width="36"
+                                     FontSize="9"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,10,0"
+                                     ToolTip="Main-camera pixels per guide-camera pixel. 0 = derive automatically from PHD2 pixel scale and the NINA profile (camera pixel size / focal length)"/>
+                            <TextBlock Text="{Binding EffectiveScaleRatioText, Mode=OneWay}"
+                                      FontSize="9"
+                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                      VerticalAlignment="Center"/>
+                        </StackPanel>
 
                         <!-- Action Buttons -->
                         <Grid>
