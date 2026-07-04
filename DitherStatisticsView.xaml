@@ -960,7 +960,7 @@
                                      Style="{DynamicResource ToggleSwitchStyle}"/>
                         </Grid>
 
-                        <!-- 3 Profile Columns: Quality / Balanced / Performance -->
+                        <!-- 3 Profile Columns: Strict (P90) / Standard (P95) / Fast (P99) -->
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -968,53 +968,80 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
 
-                            <!-- Quality Profile (1.5σ / strict) -->
+                            <!-- Strict Profile (P90) -->
                             <Border Grid.Column="0"
                                     Background="{DynamicResource TertiaryBackgroundBrush}"
                                     BorderBrush="{DynamicResource BorderBrush}"
                                     BorderThickness="1"
                                     CornerRadius="3"
                                     Padding="8"
-                                    Margin="0,0,4,0">
+                                    Margin="0,0,4,0"
+                                    ToolTip="Strict: waits until guiding is well inside its normal range. Highest confidence, longest settling — does NOT improve image quality.">
                                 <StackPanel>
                                     <!-- Profile Header -->
-                                    <TextBlock Text="Quality"
+                                    <TextBlock Text="Strict"
                                               FontSize="11"
                                               FontWeight="Bold"
                                               Foreground="{DynamicResource PrimaryBrush}"
                                               HorizontalAlignment="Center"
                                               Margin="0,0,0,2"/>
-                                    <TextBlock Text="1.5σ  /  strict"
+                                    <TextBlock Text="P90  /  slow"
                                               FontSize="8"
                                               Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                               HorizontalAlignment="Center"
                                               Margin="0,0,0,8"/>
 
-                                    <!-- Settle Pixel -->
+                                    <!-- Settle Tolerance -->
                                     <TextBlock Text="Settle Pixel"
                                               FontSize="8"
                                               Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"/>
-                                    <TextBlock HorizontalAlignment="Center" Margin="0,0,0,6">
+                                              HorizontalAlignment="Center"
+                                              ToolTip="Distance from lock position PHD2 waits for after a dither (guide camera pixels)"/>
+                                    <TextBlock HorizontalAlignment="Center">
                                         <Run Text="{Binding SettlePixelQuality, Mode=OneWay}"
                                              FontSize="15" FontWeight="Bold"
                                              Foreground="{DynamicResource PrimaryBrush}"/>
                                         <Run Text=" px" FontSize="9"
                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
                                     </TextBlock>
+                                    <TextBlock Text="{Binding SettleArcsecQuality, Mode=OneWay}"
+                                              FontSize="8"
+                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                              HorizontalAlignment="Center"
+                                              Margin="0,0,0,6"/>
 
                                     <!-- Separator -->
                                     <Border BorderBrush="{DynamicResource BorderBrush}"
                                             BorderThickness="0,1,0,0"
                                             Margin="4,0,4,6"/>
 
-                                    <!-- Min Settle Time -->
-                                    <TextBlock Text="Min Settle Time"
+                                    <!-- Expected Settle Duration -->
+                                    <TextBlock Text="Expected Settle"
                                               FontSize="8"
                                               Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"/>
+                                              HorizontalAlignment="Center"
+                                              ToolTip="Median time from dither until guiding stayed below this tolerance — for information, do NOT enter as min settle time"/>
+                                    <TextBlock HorizontalAlignment="Center" Margin="0,0,0,6">
+                                        <Run Text="{Binding ExpectedSettleQuality, Mode=OneWay}"
+                                             FontSize="15" FontWeight="Bold"
+                                             Foreground="{DynamicResource PrimaryBrush}"/>
+                                        <Run Text=" s" FontSize="9"
+                                             Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
+                                    </TextBlock>
+
+                                    <!-- Separator -->
+                                    <Border BorderBrush="{DynamicResource BorderBrush}"
+                                            BorderThickness="0,1,0,0"
+                                            Margin="4,0,4,6"/>
+
+                                    <!-- Settle Timeout -->
+                                    <TextBlock Text="Settle Timeout"
+                                              FontSize="8"
+                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                              HorizontalAlignment="Center"
+                                              ToolTip="Suggested settle timeout: covers 95% of observed settle delays plus margin"/>
                                     <TextBlock HorizontalAlignment="Center">
-                                        <Run Text="{Binding MinSettleTimeQuality, Mode=OneWay}"
+                                        <Run Text="{Binding SettleTimeoutQuality, Mode=OneWay}"
                                              FontSize="15" FontWeight="Bold"
                                              Foreground="{DynamicResource PrimaryBrush}"/>
                                         <Run Text=" s" FontSize="9"
@@ -1023,38 +1050,64 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- Balanced Profile (2.0σ / normal) -->
+                            <!-- Standard Profile (P95) -->
                             <Border Grid.Column="1"
                                     Background="{DynamicResource TertiaryBackgroundBrush}"
                                     BorderBrush="{DynamicResource BorderBrush}"
                                     BorderThickness="1"
                                     CornerRadius="3"
                                     Padding="8"
-                                    Margin="0,0,4,0">
+                                    Margin="0,0,4,0"
+                                    ToolTip="Standard: good confidence that guiding is back to normal with moderate settle times.">
                                 <StackPanel>
                                     <!-- Profile Header -->
-                                    <TextBlock Text="Balanced"
+                                    <TextBlock Text="Standard"
                                               FontSize="11"
                                               FontWeight="Bold"
                                               Foreground="{DynamicResource PrimaryBrush}"
                                               HorizontalAlignment="Center"
                                               Margin="0,0,0,2"/>
-                                    <TextBlock Text="2.0σ  /  normal"
+                                    <TextBlock Text="P95  /  balanced"
                                               FontSize="8"
                                               Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                               HorizontalAlignment="Center"
                                               Margin="0,0,0,8"/>
 
-                                    <!-- Settle Pixel -->
+                                    <!-- Settle Tolerance -->
                                     <TextBlock Text="Settle Pixel"
                                               FontSize="8"
                                               Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"/>
-                                    <TextBlock HorizontalAlignment="Center" Margin="0,0,0,6">
+                                              HorizontalAlignment="Center"
+                                              ToolTip="Distance from lock position PHD2 waits for after a dither (guide camera pixels)"/>
+                                    <TextBlock HorizontalAlignment="Center">
                                         <Run Text="{Binding SettlePixelBalanced, Mode=OneWay}"
                                              FontSize="15" FontWeight="Bold"
                                              Foreground="{DynamicResource PrimaryBrush}"/>
                                         <Run Text=" px" FontSize="9"
+                                             Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding SettleArcsecBalanced, Mode=OneWay}"
+                                              FontSize="8"
+                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                              HorizontalAlignment="Center"
+                                              Margin="0,0,0,6"/>
+
+                                    <!-- Separator -->
+                                    <Border BorderBrush="{DynamicResource BorderBrush}"
+                                            BorderThickness="0,1,0,0"
+                                            Margin="4,0,4,6"/>
+
+                                    <!-- Expected Settle Duration -->
+                                    <TextBlock Text="Expected Settle"
+                                              FontSize="8"
+                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                              HorizontalAlignment="Center"
+                                              ToolTip="Median time from dither until guiding stayed below this tolerance — for information, do NOT enter as min settle time"/>
+                                    <TextBlock HorizontalAlignment="Center" Margin="0,0,0,6">
+                                        <Run Text="{Binding ExpectedSettleBalanced, Mode=OneWay}"
+                                             FontSize="15" FontWeight="Bold"
+                                             Foreground="{DynamicResource PrimaryBrush}"/>
+                                        <Run Text=" s" FontSize="9"
                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
                                     </TextBlock>
 
@@ -1063,13 +1116,14 @@
                                             BorderThickness="0,1,0,0"
                                             Margin="4,0,4,6"/>
 
-                                    <!-- Min Settle Time -->
-                                    <TextBlock Text="Min Settle Time"
+                                    <!-- Settle Timeout -->
+                                    <TextBlock Text="Settle Timeout"
                                               FontSize="8"
                                               Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"/>
+                                              HorizontalAlignment="Center"
+                                              ToolTip="Suggested settle timeout: covers 95% of observed settle delays plus margin"/>
                                     <TextBlock HorizontalAlignment="Center">
-                                        <Run Text="{Binding MinSettleTimeBalanced, Mode=OneWay}"
+                                        <Run Text="{Binding SettleTimeoutBalanced, Mode=OneWay}"
                                              FontSize="15" FontWeight="Bold"
                                              Foreground="{DynamicResource PrimaryBrush}"/>
                                         <Run Text=" s" FontSize="9"
@@ -1078,37 +1132,63 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- Performance Profile (3.0σ / fast) -->
+                            <!-- Fast Profile (P99) -->
                             <Border Grid.Column="2"
                                     Background="{DynamicResource TertiaryBackgroundBrush}"
                                     BorderBrush="{DynamicResource BorderBrush}"
                                     BorderThickness="1"
                                     CornerRadius="3"
-                                    Padding="8">
+                                    Padding="8"
+                                    ToolTip="Fast: tolerance safely above the normal guiding scatter — settles quickly and rarely restarts. Recommended for most setups.">
                                 <StackPanel>
                                     <!-- Profile Header -->
-                                    <TextBlock Text="Performance"
+                                    <TextBlock Text="Fast"
                                               FontSize="11"
                                               FontWeight="Bold"
                                               Foreground="{DynamicResource PrimaryBrush}"
                                               HorizontalAlignment="Center"
                                               Margin="0,0,0,2"/>
-                                    <TextBlock Text="3.0σ  /  fast"
+                                    <TextBlock Text="P99  /  recommended"
                                               FontSize="8"
                                               Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                               HorizontalAlignment="Center"
                                               Margin="0,0,0,8"/>
 
-                                    <!-- Settle Pixel -->
+                                    <!-- Settle Tolerance -->
                                     <TextBlock Text="Settle Pixel"
                                               FontSize="8"
                                               Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"/>
-                                    <TextBlock HorizontalAlignment="Center" Margin="0,0,0,6">
+                                              HorizontalAlignment="Center"
+                                              ToolTip="Distance from lock position PHD2 waits for after a dither (guide camera pixels)"/>
+                                    <TextBlock HorizontalAlignment="Center">
                                         <Run Text="{Binding SettlePixelPerformance, Mode=OneWay}"
                                              FontSize="15" FontWeight="Bold"
                                              Foreground="{DynamicResource PrimaryBrush}"/>
                                         <Run Text=" px" FontSize="9"
+                                             Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding SettleArcsecPerformance, Mode=OneWay}"
+                                              FontSize="8"
+                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                              HorizontalAlignment="Center"
+                                              Margin="0,0,0,6"/>
+
+                                    <!-- Separator -->
+                                    <Border BorderBrush="{DynamicResource BorderBrush}"
+                                            BorderThickness="0,1,0,0"
+                                            Margin="4,0,4,6"/>
+
+                                    <!-- Expected Settle Duration -->
+                                    <TextBlock Text="Expected Settle"
+                                              FontSize="8"
+                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                              HorizontalAlignment="Center"
+                                              ToolTip="Median time from dither until guiding stayed below this tolerance — for information, do NOT enter as min settle time"/>
+                                    <TextBlock HorizontalAlignment="Center" Margin="0,0,0,6">
+                                        <Run Text="{Binding ExpectedSettlePerformance, Mode=OneWay}"
+                                             FontSize="15" FontWeight="Bold"
+                                             Foreground="{DynamicResource PrimaryBrush}"/>
+                                        <Run Text=" s" FontSize="9"
                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
                                     </TextBlock>
 
@@ -1117,13 +1197,14 @@
                                             BorderThickness="0,1,0,0"
                                             Margin="4,0,4,6"/>
 
-                                    <!-- Min Settle Time -->
-                                    <TextBlock Text="Min Settle Time"
+                                    <!-- Settle Timeout -->
+                                    <TextBlock Text="Settle Timeout"
                                               FontSize="8"
                                               Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"/>
+                                              HorizontalAlignment="Center"
+                                              ToolTip="Suggested settle timeout: covers 95% of observed settle delays plus margin"/>
                                     <TextBlock HorizontalAlignment="Center">
-                                        <Run Text="{Binding MinSettleTimePerformance, Mode=OneWay}"
+                                        <Run Text="{Binding SettleTimeoutPerformance, Mode=OneWay}"
                                              FontSize="15" FontWeight="Bold"
                                              Foreground="{DynamicResource PrimaryBrush}"/>
                                         <Run Text=" s" FontSize="9"
@@ -1138,6 +1219,13 @@
                                   FontSize="9"
                                   Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                   HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding RecommendationWarning, Mode=OneWay}"
+                                  FontSize="9"
+                                  Foreground="Orange"
+                                  TextWrapping="Wrap"
+                                  HorizontalAlignment="Center"
+                                  Margin="0,4,0,0"
+                                  Visibility="{Binding HasRecommendationWarning, Converter={StaticResource BoolToVis}, Mode=OneWay}"/>
                     </StackPanel>
                 </Border>
 

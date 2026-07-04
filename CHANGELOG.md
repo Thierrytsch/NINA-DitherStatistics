@@ -50,3 +50,15 @@
   - New Drift Ratio metric warns about one-directional dither patterns (walking noise) and too-small pattern spread (hot-pixel rejection)
   - Dither offsets are now converted from guide-camera to main-camera pixels; the ratio is re-evaluated on every calculation from NINA's guider info (primary) or PHD2's pixel scale (secondary) plus the active profile's focal length / pixel size, with manual override in the panel and a clear fallback indicator
   - Drizzle pixfrac used by the simulation is now configurable (default 0.6)
+## 1.6.0.0
+- Redesigned the Dither Settings Optimizer with a statistically sound algorithm:
+  - Settle Pixel Tolerance is now an empirical quantile (P90/P95/P99) of the measured stable-guiding scatter in a rolling 15-minute reference window, replacing the previous RMS + k·σ formula which mixed incompatible statistics
+  - Profiles renamed Quality/Balanced/Performance → Strict/Standard/Fast: a tighter tolerance only buys confidence that guiding is back to normal at the cost of settle time — it does not improve image quality (Fast/P99 is the sensible default for most setups)
+  - Fixed Minimum Settle Time semantics: PHD2's "min settle time" is the time the star must STAY within tolerance, not the time to reach it; the recommendation is now a small debounce value (max(2 × guide exposure, 5 s)) and the measured time-to-stable is shown separately as "Expected Settle" per profile
+  - NEW: Settle Timeout recommendation per profile — covers 95% of observed settle delays plus safety margin, at least the longest actually measured settle
+  - NEW: tolerance additionally shown in arcsec (via PHD2 pixel scale); footer warnings when few dithers are usable, settle times scatter widely, or dithers never stabilized
+  - Dither series with failed settles or star-lost events are excluded from the analysis
+  - Collection window now ends with the actual settle (SettleDone + 10 guide steps, hard cap 120 s) instead of a fixed 30 s, so slow-settling setups are analyzed correctly
+  - Settle delays are measured from the actual GuidingDithered event and require 3 consecutive stable frames (debounce against transient dips); the old bounded-positive-period detection incl. dummy periods and fallback estimator was removed
+  - The reference thresholds valid at collection time are stored per dither series, keeping multi-session persisted data self-consistent; data saved by older versions still loads (analyzed with fallbacks)
+  - Diagnostic file `*_positive_periods.txt` replaced by `*_settle_analysis.txt` (per-series settle outcome and time-to-stable per profile)

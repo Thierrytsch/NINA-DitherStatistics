@@ -135,50 +135,48 @@ The effective ratio and its source (`auto/NINA`, `auto/PHD2`, `manual`, `fallbac
 
 ## 🔧 Experimental Dither Settings Optimizer
 
-⚠️ **EXPERIMENTAL FEATURE**: The Dither Settings Optimizer analyzes post-dither guiding data to recommend optimal settle parameters. Results depend on your guiding setup and conditions. Use these recommendations as a starting point for tuning.
+⚠️ **EXPERIMENTAL FEATURE**: The Dither Settings Optimizer analyzes post-dither guiding data to recommend PHD2/NINA settle parameters. Results depend on your guiding setup and conditions. Use these recommendations as a starting point for tuning.
 
-After each dither event, the plugin collects guiding data and analyzes "positive periods" — time intervals where guiding is stable (PairRMS below threshold). From this data, it calculates recommended values for two key PHD2 dither settings:
+**Key insight**: after settling, your guiding is exactly as good as it always is — a tighter settle tolerance does **not** improve image quality. It only increases the confidence that guiding is back to normal before imaging resumes, at the cost of longer settle waits and a higher risk of settle timeouts. The profiles therefore trade *confidence vs. wasted time*, not quality vs. speed.
+
+### How it works
+
+While guiding normally (outside dithers), the plugin maintains a rolling reference window of the star's distance from the lock position (last 15 minutes / 400 guide steps). After each dither, it records guide steps until PHD2 reports `SettleDone` plus 10 more frames (max 120 s). Dithers with failed settles or lost stars are excluded.
 
 ### Settle Pixel Tolerance
 
-**Algorithm**: Based on running RMS statistics across all analyzed dither events:
+An empirical quantile of your measured stable-guiding distances (guide-camera pixels, also shown in arcsec):
 
-```
-Settle Pixel Tolerance = Running RMS + multiplier × RMS Standard Deviation
-```
-
-Three profiles with different multipliers:
-- **Quality (1.5σ)**: Tight tolerance — waits for excellent guiding stability before resuming. Best image quality, longer settle times.
-- **Balanced (2.0σ)**: Moderate tolerance — good balance between quality and speed. Recommended for most setups.
-- **Performance (3.0σ)**: Relaxed tolerance — resumes imaging quickly. Maximizes imaging time, slight quality trade-off.
+- **Strict (P90)**: below the 90th percentile of your normal scatter — PHD2 will frequently keep waiting even though guiding is long back to normal. Longest settles, no quality benefit.
+- **Standard (P95)**: solid confidence with moderate settle times.
+- **Fast (P99)**: safely above the normal scatter — settles quickly and rarely restarts the settle timer. **Recommended for most setups.**
 
 ### Minimum Settle Time
 
-**Algorithm**: Derived from the time it takes guiding to first become stable after each dither:
+PHD2's "minimum settle time" is the time the star must **stay** within tolerance — not the time it takes to get there. The recommendation is therefore a small debounce value, `max(2 × guide exposure, 5 s)`, identical for all profiles. Entering large values here only adds a fixed wait on top of every settle.
 
-1. For each dither event, identify the first "positive period" (stable guiding interval)
-2. Calculate the elapsed time from dither start to first stable guiding
-3. Take the median across all dither events
-4. Round up to the next full guide exposure interval
+### Expected Settle Duration (info)
 
-The three profiles use the same σ multipliers for the stability threshold, resulting in:
-- **Quality (strict)**: Requires tighter stability → longer minimum settle time
-- **Balanced (normal)**: Moderate stability requirement
-- **Performance (fast)**: Accepts earlier stability → shorter minimum settle time
+The median measured time from the dither until guiding stayed below the profile's tolerance for 3 consecutive frames. This tells you how long settling actually takes with your setup — do **not** enter it as minimum settle time.
+
+### Settle Timeout
+
+Suggested timeout per profile: covers the 95th percentile of observed settle delays plus the debounce time and a 1.5× safety margin (at least the longest actually measured settle), rounded up to 10 s.
 
 ### Requirements
 
-- Minimum **3 dither events** before recommendations appear
+- Minimum **3 dither events** before recommendations appear (values become reliable from ~5 usable events; a footer warning indicates low sample counts, high spread, or dithers that never stabilized)
 - PHD2 must be connected and guiding
 - Recommendations improve in accuracy with more dither events
 - Panel can be toggled on/off independently of Quality Assessment
 
 ### Display
 
-The optimizer panel shows three profile columns (Quality / Balanced / Performance), each displaying:
-- **Settle Pixel Tolerance** (in pixels)
-- **Minimum Settle Time** (in seconds, rounded to guide exposure)
-- Footer with number of analyzed events, current RMS, and guide exposure
+The optimizer panel shows three profile columns (Strict / Standard / Fast), each displaying:
+- **Settle Pixel Tolerance** (in pixels and arcsec)
+- **Expected Settle Duration** (in seconds, rounded to guide exposure)
+- **Settle Timeout** (in seconds)
+- Footer with number of analyzed events (and exclusions), the recommended minimum settle time, guide exposure, and confidence warnings
 
 ## Quality Assessment Display
 
@@ -351,7 +349,20 @@ This is an experimental plugin under active development. Feedback and suggestion
 
 ## Changelog
 
-### Version 1.5.0 (Current - Multiple Statistics Profiles, Reworked Quality Assessment)
+### Version 1.6.0 (Current - Redesigned Dither Settings Optimizer)
+
+- 🔬 Redesigned Dither Settings Optimizer with a statistically sound algorithm:
+  - Settle Pixel Tolerance is now an empirical quantile (P90/P95/P99) of the measured stable-guiding scatter in a rolling 15-minute reference window (previously RMS + k·σ, which mixed incompatible statistics)
+  - Profiles renamed Quality/Balanced/Performance → **Strict / Standard / Fast**: a tighter tolerance only buys confidence, not image quality; Fast (P99) is the sensible default
+  - Fixed Minimum Settle Time semantics: recommendation is now a small debounce value; the measured time-to-stable is shown separately as **Expected Settle Duration**
+  - ✨ NEW: **Settle Timeout** recommendation per profile (covers 95% of observed settle delays plus margin)
+  - ✨ NEW: tolerance also shown in arcsec; confidence warnings at low sample counts, high spread or unstabilized dithers
+  - Dithers with failed settles or lost stars are excluded from the analysis
+  - Collection window follows the actual settle (SettleDone + 10 guide steps, max 120 s) instead of a fixed 30 s
+  - Settle delays measured from the actual dither event with 3-frame debouncing; per-dither reference thresholds are stored so multi-session persisted data stays self-consistent
+  - Diagnostic file `*_positive_periods.txt` replaced by `*_settle_analysis.txt`
+
+### Version 1.5.0 (Multiple Statistics Profiles, Reworked Quality Assessment)
 
 - ✨ NEW: Multiple statistics profiles - keep separate statistics per target or telescope (toggle in the Statistics panel)
 - 🔬 Reworked quality assessment (fixes several calculation errors):
@@ -436,7 +447,7 @@ The grading scale is quantile-calibrated for random dithering: "Good" (typically
 
 ---
 
-**Plugin Version**: 1.5.0 (Multiple Statistics Profiles, Reworked Quality Assessment)
+**Plugin Version**: 1.6.0 (Redesigned Dither Settings Optimizer)
 **N.I.N.A. Compatibility**: 3.0+  
 **Author**: Thierry Tschanz  
 **Repository**: [NINA-DitherStatistics](https://github.com/Thierrytsch/NINA-DitherStatistics)

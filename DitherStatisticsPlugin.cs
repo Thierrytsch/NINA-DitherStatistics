@@ -109,6 +109,21 @@ namespace DitherStatistics.Plugin {
             return (sortedValues[count / 2 - 1] + sortedValues[count / 2]) / 2.0;
         }
 
+        /// <summary>
+        /// Linear-interpolated empirical quantile (q in 0..1) of the given values
+        /// </summary>
+        public static double CalculateQuantile(IEnumerable<double> values, double q) {
+            var sortedValues = new List<double>(values);
+            sortedValues.Sort();
+            if (sortedValues.Count == 0) return 0;
+
+            double position = (sortedValues.Count - 1) * q;
+            int lower = (int)Math.Floor(position);
+            int upper = (int)Math.Ceiling(position);
+            if (lower == upper) return sortedValues[lower];
+            return sortedValues[lower] + (position - lower) * (sortedValues[upper] - sortedValues[lower]);
+        }
+
         public static double CalculateStdDev(IEnumerable<double> values) {
             var valueList = new List<double>(values);
             if (valueList.Count == 0) return 0;

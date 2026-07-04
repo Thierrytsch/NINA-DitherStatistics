@@ -564,10 +564,18 @@ namespace DitherStatistics.Plugin {
                 RaisePropertyChanged(nameof(SettlePixelQuality));
                 RaisePropertyChanged(nameof(SettlePixelBalanced));
                 RaisePropertyChanged(nameof(SettlePixelPerformance));
-                RaisePropertyChanged(nameof(MinSettleTimeQuality));
-                RaisePropertyChanged(nameof(MinSettleTimeBalanced));
-                RaisePropertyChanged(nameof(MinSettleTimePerformance));
+                RaisePropertyChanged(nameof(SettleArcsecQuality));
+                RaisePropertyChanged(nameof(SettleArcsecBalanced));
+                RaisePropertyChanged(nameof(SettleArcsecPerformance));
+                RaisePropertyChanged(nameof(ExpectedSettleQuality));
+                RaisePropertyChanged(nameof(ExpectedSettleBalanced));
+                RaisePropertyChanged(nameof(ExpectedSettlePerformance));
+                RaisePropertyChanged(nameof(SettleTimeoutQuality));
+                RaisePropertyChanged(nameof(SettleTimeoutBalanced));
+                RaisePropertyChanged(nameof(SettleTimeoutPerformance));
                 RaisePropertyChanged(nameof(RecommendationInfo));
+                RaisePropertyChanged(nameof(RecommendationWarning));
+                RaisePropertyChanged(nameof(HasRecommendationWarning));
             }
         }
 
@@ -587,21 +595,75 @@ namespace DitherStatistics.Plugin {
             ? $"{Recommendation.SettlePixelTolerance_Performance:F2}"
             : "N/A";
 
-        public string MinSettleTimeQuality => Recommendation != null
-            ? $"{Recommendation.MinSettleTime_Quality:F1}"
+        // Tolerance in arcsec next to the pixel value (empty while the guider pixel scale is unknown)
+        private string FormatArcsec(double tolerancePx) =>
+            Recommendation != null && Recommendation.GuiderPixelScaleArcsec > 0
+                ? $"≈ {tolerancePx * Recommendation.GuiderPixelScaleArcsec:F2}\""
+                : "";
+
+        public string SettleArcsecQuality => Recommendation != null ? FormatArcsec(Recommendation.SettlePixelTolerance_Quality) : "";
+        public string SettleArcsecBalanced => Recommendation != null ? FormatArcsec(Recommendation.SettlePixelTolerance_Balanced) : "";
+        public string SettleArcsecPerformance => Recommendation != null ? FormatArcsec(Recommendation.SettlePixelTolerance_Performance) : "";
+
+        // Median time from dither until guiding stayed below the tolerance (info per profile)
+        public string ExpectedSettleQuality => Recommendation != null && Recommendation.ExpectedSettleDuration_Quality > 0
+            ? $"{Recommendation.ExpectedSettleDuration_Quality:F1}"
             : "N/A";
 
-        public string MinSettleTimeBalanced => Recommendation != null
-            ? $"{Recommendation.MinSettleTime_Balanced:F1}"
+        public string ExpectedSettleBalanced => Recommendation != null && Recommendation.ExpectedSettleDuration_Balanced > 0
+            ? $"{Recommendation.ExpectedSettleDuration_Balanced:F1}"
             : "N/A";
 
-        public string MinSettleTimePerformance => Recommendation != null
-            ? $"{Recommendation.MinSettleTime_Performance:F1}"
+        public string ExpectedSettlePerformance => Recommendation != null && Recommendation.ExpectedSettleDuration_Performance > 0
+            ? $"{Recommendation.ExpectedSettleDuration_Performance:F1}"
             : "N/A";
 
-        public string RecommendationInfo => Recommendation != null
-            ? $"Based on {Recommendation.DitherEventsAnalyzed} dither events | RMS: {Recommendation.CurrentRunningRMS:F2} px | Exposure: {Recommendation.GuideExposure:F1}s"
-            : "";
+        public string SettleTimeoutQuality => Recommendation != null && Recommendation.SettleTimeout_Quality > 0
+            ? $"{Recommendation.SettleTimeout_Quality:F0}"
+            : "N/A";
+
+        public string SettleTimeoutBalanced => Recommendation != null && Recommendation.SettleTimeout_Balanced > 0
+            ? $"{Recommendation.SettleTimeout_Balanced:F0}"
+            : "N/A";
+
+        public string SettleTimeoutPerformance => Recommendation != null && Recommendation.SettleTimeout_Performance > 0
+            ? $"{Recommendation.SettleTimeout_Performance:F0}"
+            : "N/A";
+
+        public string RecommendationInfo {
+            get {
+                if (Recommendation == null) return "";
+                string excluded = Recommendation.ExcludedSeries > 0 ? $" ({Recommendation.ExcludedSeries} excluded)" : "";
+                string minSettle = Recommendation.MinSettleTime_Balanced > 0
+                    ? $" | Min settle time: {Recommendation.MinSettleTime_Balanced:F1}s (all profiles)"
+                    : "";
+                return $"Based on {Recommendation.DitherEventsAnalyzed} dither events{excluded}{minSettle} | Guide exposure: {Recommendation.GuideExposure:F1}s";
+            }
+        }
+
+        public string RecommendationWarning {
+            get {
+                var rec = Recommendation;
+                if (rec == null) return "";
+                var parts = new List<string>();
+                if (rec.SeriesUsed_Balanced > 0 && rec.SeriesUsed_Balanced < 5) {
+                    parts.Add($"only {rec.SeriesUsed_Balanced} usable dither events — values are preliminary");
+                }
+                if (rec.Unstabilized_Quality > 0) {
+                    parts.Add($"{rec.Unstabilized_Quality} dither(s) never stabilized at the strict tolerance");
+                }
+                if (rec.SettleDelaySpread_Balanced > 0 && rec.ExpectedSettleDuration_Balanced > 0
+                    && rec.SettleDelaySpread_Balanced > rec.ExpectedSettleDuration_Balanced) {
+                    parts.Add("settle times vary a lot between dithers");
+                }
+                if (rec.ExcludedSeries > 0) {
+                    parts.Add($"{rec.ExcludedSeries} dither(s) excluded (failed settle / star lost)");
+                }
+                return parts.Count > 0 ? "⚠ " + string.Join("; ", parts) : "";
+            }
+        }
+
+        public bool HasRecommendationWarning => !string.IsNullOrEmpty(RecommendationWarning);
 
         // Settings file path for optimizer toggle
         private static readonly string OptimizerSettingsFilePath = System.IO.Path.Combine(
