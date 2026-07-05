@@ -245,7 +245,7 @@ For complete documentation, algorithms, and detailed explanations, see the full 
 	<!-- ============================================ -->
 	<!-- POST-BUILD: Copy to NINA -->
 	<!-- ============================================ -->
-	<Target Name="PostBuild" AfterTargets="Build">
+	<Target Name="PostBuild" AfterTargets="Build" Condition="'$(CI)' != 'true'">
 		<!-- Create Plugin-Folder (with Subdirectorys if neccessary) -->
 		<MakeDir Directories="$(LocalAppData)\NINA\Plugins\3.0.0\DitherStatistics" ContinueOnError="true" />
 
