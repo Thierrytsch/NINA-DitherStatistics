@@ -28,11 +28,12 @@ namespace DitherStatistics.Plugin {
         private readonly IGuiderMediator guiderMediator;
         private readonly IProfileService profileService;
         private readonly PHD2Client phd2Client;
+        private readonly DitherOptimizerService optimizerService;
+        private readonly Phd2ConnectionManager phd2ConnectionManager;
         private readonly PluginSettingsStore settingsStore = new PluginSettingsStore();
         private readonly StatisticsProfileService profileDataService = new StatisticsProfileService();
         private DitherEvent currentDither = null;
         private readonly Random random = new Random();
-        private bool hasLoggedConnectionFailure = false;
 
         // Theme color monitoring
         private System.Windows.Threading.DispatcherTimer themeColorTimer;
@@ -96,25 +97,42 @@ namespace DitherStatistics.Plugin {
             profileService.ProfileChanged += (s, e) =>
                 Application.Current?.Dispatcher.BeginInvoke(new Action(UpdateQualityMetrics));
 
-            // Initialize PHD2 client
+            // Initialize PHD2 protocol client and the optimizer service that consumes
+            // its events; exposure and pixel scale are transport values owned by the
+            // client and read lazily at analysis time
             phd2Client = new PHD2Client("127.0.0.1", 4400);
+            optimizerService = new DitherOptimizerService(
+                () => phd2Client.CurrentGuideExposure,
+                () => phd2Client.GuiderPixelScaleArcsec);
+
+            // Optimizer wiring first, so the series bookkeeping runs before the VM
+            // handlers (same order as when the state machine lived inside PHD2Client)
+            phd2Client.GuidingDithered += (s, e) => optimizerService.HandleGuidingDithered(e);
+            phd2Client.SettleDone += (s, e) => optimizerService.HandleSettleDone(e);
+            phd2Client.GuideStep += (s, e) => optimizerService.HandleGuideStep(e);
+            phd2Client.StarLost += (s, e) => optimizerService.HandleStarLost();
+            phd2Client.GuidingStarted += (s, e) => optimizerService.HandleGuidingStarted();
+            // Only an explicit disconnect (Dispose) aborts the running collection
+            // window; a mere connection loss deliberately does not clean up
+            phd2Client.ConnectionStatusChanged += (s, status) => {
+                if (status == "Disconnected") optimizerService.HandleDisconnected();
+            };
+
             phd2Client.GuidingDithered += OnPHD2GuidingDithered;
             phd2Client.SettleDone += OnPHD2SettleDone;
-            phd2Client.ConnectionStatusChanged += OnPHD2ConnectionStatusChanged;
-            phd2Client.DitherRecommendationUpdated += OnDitherRecommendationUpdated;
+            optimizerService.DitherRecommendationUpdated += OnDitherRecommendationUpdated;
 
-            // The client labels its diagnostic export files with the active profile
-            phd2Client.CurrentProfileName = selectedProfileName;
+            // The optimizer labels its diagnostic export files with the active profile
+            optimizerService.CurrentProfileName = selectedProfileName;
 
             // Restore statistics from the previous session if persistence is enabled
-            // (after PHD2 client creation - optimizer data is restored into the client)
+            // (after service creation - optimizer data is restored into the service)
             RestoreStatisticsData();
 
-            // Auto-connect to PHD2 after a short delay
-            System.Threading.Tasks.Task.Run(async () => {
-                await System.Threading.Tasks.Task.Delay(2000);
-                await ConnectToPHD2();
-            });
+            // Auto-connect to PHD2 (2 s initial delay and the retry/reconnect
+            // policy live in the connection manager)
+            phd2ConnectionManager = new Phd2ConnectionManager(phd2Client);
+            phd2ConnectionManager.Start();
 
             // Start theme color monitoring for dynamic chart updates
             StartThemeColorMonitoring();
@@ -763,7 +781,7 @@ namespace DitherStatistics.Plugin {
                 cumulativeY = data.CumulativeY;
 
                 // Restore optimizer raw data so new dithers accumulate on the analysis
-                phd2Client?.RestoreDitherAnalysisData(data.OptimizerData);
+                optimizerService?.RestoreDitherAnalysisData(data.OptimizerData);
 
                 var restoredRecommendation = data.Recommendation;
                 Application.Current?.Dispatcher.BeginInvoke(
@@ -937,7 +955,7 @@ namespace DitherStatistics.Plugin {
                 PixelShiftValues = pixelShiftValues.ToList(),
                 CumulativeX = cumulativeX,
                 CumulativeY = cumulativeY,
-                OptimizerData = phd2Client?.GetDitherAnalysisSnapshot(),
+                OptimizerData = optimizerService?.GetDitherAnalysisSnapshot(),
                 Recommendation = Recommendation
             };
         }
@@ -956,8 +974,8 @@ namespace DitherStatistics.Plugin {
             }
 
             selectedProfileName = newName;
-            if (phd2Client != null) {
-                phd2Client.CurrentProfileName = newName;
+            if (optimizerService != null) {
+                optimizerService.CurrentProfileName = newName;
             }
 
             if (!profileDataService.TryGetFromMemory(newName, out var data)) {
@@ -986,8 +1004,8 @@ namespace DitherStatistics.Plugin {
 
             // Clear first: RestoreDitherAnalysisData returns early on empty snapshots and
             // never clears, so the previous profile's optimizer data would leak otherwise
-            phd2Client?.ClearDitherAnalysisData();
-            phd2Client?.RestoreDitherAnalysisData(data.OptimizerData);
+            optimizerService?.ClearDitherAnalysisData();
+            optimizerService?.RestoreDitherAnalysisData(data.OptimizerData);
             Recommendation = data.Recommendation;
 
             UpdateSettleTimeChart();
@@ -1163,7 +1181,7 @@ namespace DitherStatistics.Plugin {
             currentDither = null;
 
             // Clear dither optimizer data and recommendation
-            phd2Client?.ClearDitherAnalysisData();
+            optimizerService?.ClearDitherAnalysisData();
             Recommendation = null;
 
             // Clear ALL profiles, not only the active one (memory + files);
@@ -1267,51 +1285,8 @@ namespace DitherStatistics.Plugin {
 
         #region PHD2 Integration
 
-        private async System.Threading.Tasks.Task ConnectToPHD2() {
-            try {
-                // Only log connection attempt the first time
-                if (!hasLoggedConnectionFailure) {
-                    Logger.Info("Attempting to connect to PHD2...");
-                }
-                bool connected = await phd2Client.ConnectAsync();
-
-                if (connected) {
-                    Logger.Info("Successfully connected to PHD2!");
-                    hasLoggedConnectionFailure = false; // Reset flag on successful connection
-                } else {
-                    // Only log warning the first time
-                    if (!hasLoggedConnectionFailure) {
-                        Logger.Warning("Failed to connect to PHD2 - will retry later");
-                        hasLoggedConnectionFailure = true;
-                    }
-
-                    // Retry after 10 seconds
-                    await System.Threading.Tasks.Task.Delay(10000);
-                    await ConnectToPHD2();
-                }
-            } catch (Exception ex) {
-                Logger.Error($"Error connecting to PHD2: {ex.Message}");
-            }
-        }
-
-        private void OnPHD2ConnectionStatusChanged(object sender, string status) {
-            // Only log connection status changes if it's a successful connection or the first failure
-            if (status.Contains("Connected") && !status.Contains("failed")) {
-                Logger.Info($"PHD2 Connection Status: {status}");
-                hasLoggedConnectionFailure = false; // Reset flag on successful connection
-            } else if (!hasLoggedConnectionFailure && (status.Contains("Connection failed") || status.Contains("Connection lost"))) {
-                Logger.Info($"PHD2 Connection Status: {status}");
-                hasLoggedConnectionFailure = true;
-            }
-
-            // If disconnected, try to reconnect after delay
-            if (status.Contains("Connection lost") || status.Contains("Disconnected")) {
-                System.Threading.Tasks.Task.Run(async () => {
-                    await System.Threading.Tasks.Task.Delay(5000);
-                    await ConnectToPHD2();
-                });
-            }
-        }
+        // Connect/retry/reconnect policy and connection-status logging live in
+        // Phd2ConnectionManager (started in the constructor)
 
         private void OnPHD2GuidingDithered(object sender, PHD2GuidingDitheredEventArgs e) {
             try {
@@ -1897,7 +1872,11 @@ namespace DitherStatistics.Plugin {
                     Logger.Info("Theme color monitoring timer stopped");
                 }
 
+                // Dispose order matters: the client's Disconnect fires "Disconnected",
+                // which lets the optimizer abort its running collection window (the
+                // snapshot above already captured the in-progress points)
                 phd2Client?.Dispose();
+                optimizerService?.Dispose();
 
                 if (guiderMediator != null) {
                     guiderMediator.RemoveConsumer(this);
