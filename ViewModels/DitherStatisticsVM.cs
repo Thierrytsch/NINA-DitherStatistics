@@ -56,7 +56,7 @@ namespace DitherStatistics.Plugin {
                 });
             }
 
-            // ✅ Load DataTemplates HIER im ViewModel (nicht im Plugin!)
+            // ✅ Load DataTemplates HERE in the ViewModel (not in the Plugin!)
             LoadDataTemplates();
 
             // ✅ NO MORE InitializePlots() call here!

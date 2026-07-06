@@ -2,9 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Language convention
+
+**All source — code, comments, XML doc, log/exception messages, commit messages, UI strings, and documentation (CLAUDE.md, README, CHANGELOG, REFACTORING_PLAN) — is written in English.** The historical codebase contained German comments; these are being translated as files are touched. When editing a file with leftover German text, translate it to English as part of the change; never introduce new non-English text. Chat with the maintainer may be in German, but nothing German ends up in a committed artifact.
+
 ## Build & Deploy
 
-This is a N.I.N.A. plugin (WPF, .NET 8.0, x64) with an xUnit test project (`DitherStatistics.Tests`, net8.0-windows) covering everything that doesn't need NINA/UI/network.
+This is a N.I.N.A. plugin (WPF, .NET 8.0, x64) with an xUnit test project (`DitherStatistics.Tests`, net8.0-windows). Most tests are pure (no NINA/UI/network); a set of socket-level end-to-end tests drive a real `PHD2Client` over loopback against an in-process fake PHD2 server, and an opt-in integration suite talks to a real PHD2. See **Testing** below.
 
 ```powershell
 # Build (PostBuild target auto-copies DLLs to NINA plugin folder)
@@ -25,6 +29,33 @@ The plugin version is defined **once** in `DitherStatistics.csproj` (`<Version>`
 
 The plugin GUID lives in `Properties/AssemblyInfo.cs` — **never change it**, NINA uses it as the persistent plugin identity.
 
+Current version: **1.6.0.0**. Feature milestones relevant to the architecture below (full detail in `CHANGELOG.md`):
+- **1.4** — multi-session statistics persistence ("Keep across sessions" toggle).
+- **1.5** — multiple statistics profiles (per target/telescope) with automatic v1.4→Default migration; reworked quality assessment (real drizzle-weight simulation, Drift Ratio metric, guider→main-camera pixel-scale conversion, configurable drizzle pixfrac).
+- **1.6** — Dither Settings Optimizer redesigned around empirical quantiles (P90/P95/P99 = Strict/Standard/Fast); corrected min-settle-time semantics; new Settle Timeout and Expected Settle recommendations; failed/star-lost dithers excluded; settle-follows-actual-SettleDone collection window (see the Optimizer subsections under **Architecture**).
+
+## Testing
+
+The functional test story has three stages (`SmokeTest/README.md` is the authoritative source; keep it in sync when the flow changes):
+
+| Stage | Runs | Verifies | When |
+|---|---|---|---|
+| 1 — unit + in-process E2E | `dotnet test` (always) | pure math/IO services **and** the socket path (`PHD2Client` parsing → `DitherOptimizerService`) against a fake PHD2 server | every test run, seconds |
+| 2 — PHD2 integration | `dotnet test` with PHD2 guiding | the real PHD2 wire format incl. a live dither round-trip; auto-skips without PHD2 | ~3 min, opt-in |
+| 3 — NINA smoke test | `SmokeTest/Run-SmokeTest.ps1` | the plugin inside real NINA: MEF load, panel/charts, PHD2 auto-connect, persistence, diagnostic files | ~10–20 min, manual |
+
+`DitherStatistics.Tests/` (xUnit, net8.0-windows, x64) references `NINA.Core` as a *normal* PackageReference (the plugin references it `ExcludeAssets=runtime`) so `Logger.*` resolves at test runtime; `System.Drawing.Common` is pinned to 8.0.0 to avoid the MSB3277 net462↔net8.0 conflict. The plugin csproj excludes the test tree from its own glob (`<Compile Remove="DitherStatistics.Tests/**/*.cs" />`). The **JSON contract tests** (`JsonContractTests.cs`) are the safety net for the persistence format — they assert the exact property names (incl. the `_Quality`/`_Balanced`/`_Performance` suffixes); do not let a refactor change them.
+
+Test files by concern:
+- `StatisticsTests.cs`, `DitherQualityMetricsTests.cs`, `DitherAnalysisTests.cs`, `PixelScaleServiceTests.cs` — pure-math services (golden values, synthetic dither series, quantile/timeout formulas).
+- `PluginSettingsStoreTests.cs`, `StatisticsProfileServiceTests.cs` — settings/profile file I/O against a temp directory (roundtrip, missing/corrupt file → default, legacy migration, sanitization collisions).
+- `JsonContractTests.cs` — persistence-format property-name contract.
+- `DitherOptimizerServiceTests.cs` — the state machine driven directly via its `Handle*` methods (no socket): full dither cycle, rapid dithering, star-lost/settle-failed, disconnect/clear/restore semantics.
+- `FakePhd2Server.cs` + `Phd2EndToEndTests.cs` — a real `PHD2Client` over a real loopback socket to an in-process fake PHD2 (`FakePhd2Server`), wired to a `DitherOptimizerService` exactly as the VM wires it; covers TCP connect/read-loop, JSON-RPC round-trips, event parsing, malformed-line resilience, connection-lost vs. explicit-disconnect. Events are stamped `DateTime.Now` inside `PHD2Client`, so time-window scenarios stay in the `Handle*`-level tests.
+- `Phd2IntegrationTests.cs` — `[Trait("Category","Integration")]`, gated by a custom `[Phd2Fact]` that probes `127.0.0.1:4400` and **skips** unless a real PHD2 is *guiding*; runs a live dither round-trip. Start PHD2 with `SmokeTest/Start-Phd2Guiding.ps1` first.
+
+The stage-3 smoke test (`SmokeTest/Run-SmokeTest.ps1`) exercises the plugin end-to-end in real NINA by triggering dithers directly over PHD2's JSON-RPC API (port 4400) — no Sequencer, NINA hardware-connect, or real hardware needed, because the plugin listens on the PHD2 socket, not on NINA. It stops NINA → builds/deploys → starts PHD2 simulator guiding → starts NINA → waits for the plugin to connect → fills the reference window → sends N `dither` RPCs → screenshots → asserts (no plugin `ERROR` lines in the NINA log, a `*_dither_analysis.txt` with ≥ N series, exactly N plausible new `DitherEvents` in the active profile JSON). Artifacts land in `SmokeTest/artifacts/<timestamp>/`. Deliberately still manual: visual chart correctness, theme switching, Options page, Clear Data button, and the NINA-`GuiderInfo` pixel-scale path.
+
 ## Architecture
 
 The plugin went through an 8-stage refactor on branch `refactor/v2` (see `REFACTORING_PLAN.md` for the full history and the invariants that were preserved throughout). Current layout:
@@ -44,7 +75,8 @@ DitherStatistics/
 │                                    ChartTooltipHelper)
 ├── ViewModels/DitherStatisticsVM.cs (coordinator: bindings, commands, wiring)
 ├── Views/DitherStatisticsView.xaml(.cs)
-└── DitherStatistics.Tests/        (xUnit)
+├── DitherStatistics.Tests/        (xUnit: unit, in-process socket E2E, opt-in PHD2 integration)
+└── SmokeTest/                     (PowerShell stage-3 NINA smoke test + PHD2 helpers, artifacts/)
 ```
 
 Convention carried through the refactor: extracted pure-math/IO services (`Statistics`, `DitherQualityMetrics`, `DitherAnalysis`, `PixelScaleService`, `PluginSettingsStore`, `StatisticsProfileService`) stay **Logger-free** so they're usable from tests without the NINA runtime; the VM keeps the surrounding try/catch and `Logger.*` calls at call sites, preserving the original log messages.

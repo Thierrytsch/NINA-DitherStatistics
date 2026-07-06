@@ -27,7 +27,7 @@
 	</PropertyGroup>
 
 	<!-- ============================================ -->
-	<!-- PLUGIN METADATEN -->
+	<!-- PLUGIN METADATA -->
 	<!-- ============================================ -->
 	<PropertyGroup>
 		<!-- Basic Info -->
@@ -47,7 +47,7 @@
 	</PropertyGroup>
 
 	<!-- ============================================ -->
-	<!-- NINA PLUGIN METADATEN -->
+	<!-- NINA PLUGIN METADATA -->
 	<!-- ============================================ -->
 	<ItemGroup>
 		<!-- Minimum NINA Version -->

@@ -1,95 +1,98 @@
-# Automatisierte Funktionstests (Smoketest)
+# Automated Functional Tests (Smoketest)
 
-Drei Stufen ersetzen den manuellen Testablauf (PHD2 starten, Guiding aufsetzen,
-NINA + Sequencer, Dithers abwarten, GUI prüfen). Kernidee: Das Plugin hört auf den
-PHD2-Socket, nicht auf NINA — Dithers werden direkt über PHD2s JSON-RPC-API
-(Port 4400) ausgelöst. Sequencer, NINA-Hardware-Connect und echte Hardware sind
-nicht nötig.
+Three stages replace the manual test workflow (start PHD2, set up guiding,
+NINA + Sequencer, wait for dithers, check GUI). Core idea: the plugin listens
+on the PHD2 socket, not on NINA — dithers are triggered directly via PHD2's
+JSON-RPC API (port 4400). Sequencer, NINA hardware-connect, and real hardware
+are not needed.
 
-| Stufe | Was läuft | Was sie prüft | Dauer |
+| Stage | What runs | What it verifies | Duration |
 |---|---|---|---|
-| 1 | `dotnet test` (immer) | Socket → `PHD2Client`-Parsing → `DitherOptimizerService`, deterministisch gegen einen Fake-PHD2-Server (`FakePhd2Server.cs`, `Phd2EndToEndTests.cs`) | Sekunden |
-| 2 | `dotnet test` bei laufendem PHD2 | Kompatibilität mit dem echten PHD2-Wire-Format inkl. echtem Dither-Roundtrip (`Phd2IntegrationTests.cs`, Auto-Skip ohne PHD2) | ~3 min |
-| 3 | `Run-SmokeTest.ps1` | Plugin im echten NINA: MEF-Load, Panel/Charts, PHD2-Auto-Connect, Persistenz, Diagnose-Dateien | ~10–20 min |
+| 1 | `dotnet test` (always) | Socket → `PHD2Client` parsing → `DitherOptimizerService`, deterministic against a fake PHD2 server (`FakePhd2Server.cs`, `Phd2EndToEndTests.cs`) | seconds |
+| 2 | `dotnet test` while PHD2 is running | Compatibility with the real PHD2 wire format, including a real dither round-trip (`Phd2IntegrationTests.cs`, auto-skips without PHD2) | ~3 min |
+| 3 | `Run-SmokeTest.ps1` | Plugin in real NINA: MEF load, panel/charts, PHD2 auto-connect, persistence, diagnostic files | ~10-20 min |
 
-## Einmaliges Setup
+## One-time setup
 
-**PHD2** (für Stufe 2 + 3):
+**PHD2** (for stages 2 + 3):
 
-1. Ausrüstungsprofil **`Simulator`** anlegen: Kamera = *Simulator*, Montierung = *On-camera*.
-2. *Tools → Enable Server* aktivieren (im Profil gespeichert).
-3. Einmal manuell kalibrieren, dann in den Guiding-Einstellungen
-   **„Auto restore calibration"** aktivieren — Folgeläufe überspringen die Kalibration.
+1. Create equipment profile **`Simulator`**: camera = *Simulator*, mount = *On-camera*.
+2. Enable *Tools → Enable Server* (saved in the profile).
+3. Calibrate manually once, then enable **"Auto restore calibration"** in the
+   guiding settings — subsequent runs skip calibration.
 
-**NINA** (für Stufe 3):
+**NINA** (for stage 3):
 
-1. Plugin ist installiert (macht der Build automatisch via PostBuild).
-2. Im **Imaging-Tab** das *Dither Statistics*-Panel einmal sichtbar anordnen —
-   NINA merkt sich das Panel-Layout. Den Tab selbst wechselt das Skript
-   automatisch (NINA startet immer im Equipment-Tab; der Wechsel läuft über
-   UI-Automation, bei lokalisiertem NINA `-ImagingTabLabel` anpassen).
+1. Plugin is installed (the build does this automatically via PostBuild).
+2. In the **Imaging tab**, arrange the *Dither Statistics* panel to be visible
+   once — NINA remembers the panel layout. The script switches the tab itself
+   automatically (NINA always starts on the Equipment tab; the switch runs via
+   UI automation — adjust `-ImagingTabLabel` for a localized NINA).
 
-Standardpfade (per Parameter übersteuerbar): PHD2 `%ProgramFiles(x86)%\PHDGuiding2\phd2.exe`,
+Default paths (overridable via parameter): PHD2 `%ProgramFiles(x86)%\PHDGuiding2\phd2.exe`,
 NINA `%ProgramFiles%\N.I.N.A. - Nighttime Imaging 'N' Astronomy\NINA.exe`.
 
-## Verwendung
+## Usage
 
 ```powershell
-# Stufe 1 (+ 2, falls PHD2 guidet): läuft bei jedem Test-Durchlauf mit
+# Stage 1 (+ 2, if PHD2 is guiding): runs with every test run
 dotnet test DitherStatistics.sln
 
-# Stufe 2 gezielt: erst PHD2-Simulator-Guiding starten, dann testen
+# Stage 2 specifically: start PHD2 simulator guiding first, then test
 .\SmokeTest\Start-Phd2Guiding.ps1
 dotnet test DitherStatistics.sln --filter "Category=Integration"
 
-# Stufe 3: Schnelllauf (5 Dithers) bzw. voller Lauf (20 Dithers)
+# Stage 3: quick run (5 dithers) or full run (20 dithers)
 .\SmokeTest\Run-SmokeTest.ps1 -DitherCount 5 -ReferenceWaitSec 30
 .\SmokeTest\Run-SmokeTest.ps1
 ```
 
-`Run-SmokeTest.ps1` macht: NINA beenden → Build + Deploy → PHD2-Sim-Guiding →
-NINA starten → auf Plugin-Connect warten (NINA-Log) → Guiding-Neustart (Plugin
-sieht `StartGuiding`) → Referenzfenster füllen → N × `dither`-RPC mit
-SettleDone-Wait → Screenshots → NINA schließen → Assertions. Exit-Code 0 = grün.
+`Run-SmokeTest.ps1` does: stop NINA → build + deploy → PHD2 sim guiding →
+start NINA → wait for plugin connect (NINA log) → restart guiding (plugin
+sees `StartGuiding`) → fill reference window → N × `dither` RPC with
+SettleDone wait → screenshots → close NINA → assertions. Exit code 0 = green.
 
-Wichtige Schalter: `-SkipBuild`, `-KeepPhd2` (PHD2 nicht beenden), `-KeepNina`,
-`-Configuration Debug`, `-ImagingTabLabel` (Label des Imaging-Tabs bei
-lokalisiertem NINA).
+Important switches: `-SkipBuild`, `-KeepPhd2` (don't stop PHD2), `-KeepNina`,
+`-Configuration Debug`, `-ImagingTabLabel` (label of the Imaging tab for a
+localized NINA).
 
-**Assertions von Stufe 3:**
+**Stage 3 assertions:**
 
-- NINA-Log enthält keine `ERROR`-Zeilen aus Plugin-Klassen.
-- `%LocalAppData%\NINA\DitherStatistics\*_dither_analysis.txt` wurde in diesem
-  Lauf geschrieben und enthält ≥ N Dither-Serien.
-- Das aktive Profil-JSON (`profiles\<name>.json`) hat **exakt N neue**
-  `DitherEvents`, alle plausibel (Success, `0 < SettleTime ≤ Timeout+30 s`,
-  Pixel-Shift vorhanden).
+- NINA log contains no `ERROR` lines from plugin classes.
+- `%LocalAppData%\NINA\DitherStatistics\*_dither_analysis.txt` was written
+  during this run and contains ≥ N dither series.
+- The active profile JSON (`profiles\<name>.json`) has **exactly N new**
+  `DitherEvents`, all plausible (Success, `0 < SettleTime ≤ Timeout+30 s`,
+  pixel shift present).
 
-Artefakte (Screenshots, Report, Log- und Datei-Kopien) landen in
-`SmokeTest\artifacts\<timestamp>\`. Screenshots: nach 5 Dithers (Panel-Oberteil),
-am Ende `nina_final_top.png` (Charts) und `nina_final_bottom.png` (per Mausrad
-ans Panel-Ende gescrollt: Quality-Metriken, Optimizer-Empfehlungen, Actions —
-das Rad wird bewusst über einem Text-Bereich gesendet, über den Charts würde es
-zoomen statt scrollen). Das Skript aktiviert die Statistik-Persistenz des Plugins
-für den Lauf und stellt die ursprüngliche Einstellung danach wieder her.
+Artifacts (screenshots, report, log and file copies) end up in
+`SmokeTest\artifacts\<timestamp>\`. Screenshots: after 5 dithers (top of the
+panel), at the end `nina_final_top.png` (charts) and `nina_final_bottom.png`
+(scrolled to the end of the panel via mouse wheel: quality metrics, optimizer
+recommendations, actions — the wheel is deliberately sent over a text area,
+since over the charts it would zoom instead of scroll). The script enables
+the plugin's statistics persistence for the run and restores the original
+setting afterward.
 
-## Was bewusst manuell bleibt
+## What deliberately stays manual
 
-- **Visuelle Chart-Korrektheit** (ScottPlot-Rendering) — nur über die Screenshots
-  sichtkontrollierbar.
-- **Theme-Wechsel** (`NinaThemeWatcher`), **Options-Seite**, **Clear-Data-Button**
-  (GUI-Interaktion; wäre mit FlaUI automatisierbar, bewusst weggelassen).
-- **Pixel-Scale über NINA-GuiderInfo** (`IGuiderConsumer`) — bräuchte einen
-  NINA-Guider-Connect (z. B. via ninaAPI-Plugin); der PHD2-`get_pixel_scale`-Pfad
-  ist abgedeckt.
-- Echte Hardware / echter Himmel.
+- **Visual chart correctness** (ScottPlot rendering) — only verifiable by
+  visually checking the screenshots.
+- **Theme switching** (`NinaThemeWatcher`), **Options page**, **Clear Data
+  button** (GUI interaction; could be automated with FlaUI, deliberately
+  omitted).
+- **Pixel scale via NINA GuiderInfo** (`IGuiderConsumer`) — would need a
+  NINA guider connect (e.g. via the ninaAPI plugin); the PHD2 `get_pixel_scale`
+  path is covered.
+- Real hardware / real sky.
 
-## Fehlersuche
+## Troubleshooting
 
-- *„PHD2 profile 'Simulator' not found"* → Einmal-Setup oben; anderer Name via
-  `-Phd2ProfileName`.
-- *„server (port 4400) did not come up"* → *Enable Server* im PHD2-Profil fehlt.
-- Stufe-2-Tests werden geskippt → PHD2 läuft nicht oder guidet nicht
-  (`Start-Phd2Guiding.ps1` ausführen).
-- Kalibration schlägt in der Simulator-Zeitlupe fehl → im PHD2-Simulator-Profil
-  Deklination ≈ 0 lassen (Standard) und Belichtung 1 s.
+- *"PHD2 profile 'Simulator' not found"* → see one-time setup above; a
+  different name can be passed via `-Phd2ProfileName`.
+- *"server (port 4400) did not come up"* → *Enable Server* is missing in the
+  PHD2 profile.
+- Stage-2 tests get skipped → PHD2 isn't running or isn't guiding
+  (run `Start-Phd2Guiding.ps1`).
+- Calibration fails in simulator slow-motion mode → in the PHD2 simulator
+  profile, leave declination ≈ 0 (default) and exposure at 1 s.
