@@ -6,7 +6,6 @@ using NINA.Profile.Interfaces;
 using NINA.WPF.Base.Interfaces.ViewModel;
 using NINA.WPF.Base.ViewModel;
 using ScottPlot;
-using ScottPlot.Plottable;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -36,8 +35,7 @@ namespace DitherStatistics.Plugin {
         private readonly Random random = new Random();
 
         // Theme color monitoring
-        private System.Windows.Threading.DispatcherTimer themeColorTimer;
-        private System.Drawing.Color lastPrimaryColor = System.Drawing.Color.White;
+        private readonly NinaThemeWatcher themeWatcher = new NinaThemeWatcher();
 
         // Cumulative position tracking for absolute chart display
         private double cumulativeX = 0.0;
@@ -135,7 +133,8 @@ namespace DitherStatistics.Plugin {
             phd2ConnectionManager.Start();
 
             // Start theme color monitoring for dynamic chart updates
-            StartThemeColorMonitoring();
+            themeWatcher.PrimaryColorChanged += OnThemeColorChanged;
+            themeWatcher.Start();
 
             Logger.Info("DitherStatisticsVM initialized successfully with ScottPlot 4.1 (Lazy Loading)!");
         }
@@ -160,22 +159,16 @@ namespace DitherStatistics.Plugin {
                     pixelShiftPlot.Plot.XLabel("X Pixels");
                     pixelShiftPlot.Plot.YLabel("Y Pixels");
 
-                    // Get NINA theme colors
-                    var primaryColor = GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
-
-                    // Set axis label colors (same as chart title)
-                    pixelShiftPlot.Plot.XAxis.LabelStyle(color: primaryColor);
-                    pixelShiftPlot.Plot.YAxis.LabelStyle(color: primaryColor);
-
-                    // Set axis, grid, and tick colors to PrimaryBrush
-                    pixelShiftPlot.Plot.XAxis.Color(primaryColor);
-                    pixelShiftPlot.Plot.YAxis.Color(primaryColor);
-                    pixelShiftPlot.Plot.XAxis.TickLabelStyle(color: primaryColor);
-                    pixelShiftPlot.Plot.YAxis.TickLabelStyle(color: primaryColor);
-                    pixelShiftPlot.Plot.Grid(color: System.Drawing.Color.FromArgb(50, primaryColor.R, primaryColor.G, primaryColor.B));
+                    // Get NINA theme colors and style axes/grid to match
+                    var primaryColor = NinaThemeWatcher.GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
+                    ChartTheme.ApplyColors(pixelShiftPlot, primaryColor);
 
                     // ✅ Attach tooltip event handlers
-                    AttachPixelShiftTooltip(pixelShiftPlot);
+                    ChartTooltipHelper.AttachPixelShiftTooltip(
+                        pixelShiftPlot,
+                        () => pixelShiftValues,
+                        text => PixelShiftTooltipText = text,
+                        visible => PixelShiftTooltipVisible = visible);
 
                     Logger.Info("PixelShiftPlot created (lazy loading)");
                 }
@@ -201,22 +194,16 @@ namespace DitherStatistics.Plugin {
                     settleTimePlot.Plot.XLabel("Dither #");
                     settleTimePlot.Plot.YLabel("Settle Time (s)");
 
-                    // Get NINA theme colors
-                    var primaryColor = GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
-
-                    // Set axis label colors (same as chart title)
-                    settleTimePlot.Plot.XAxis.LabelStyle(color: primaryColor);
-                    settleTimePlot.Plot.YAxis.LabelStyle(color: primaryColor);
-
-                    // Set axis, grid, and tick colors to PrimaryBrush
-                    settleTimePlot.Plot.XAxis.Color(primaryColor);
-                    settleTimePlot.Plot.YAxis.Color(primaryColor);
-                    settleTimePlot.Plot.XAxis.TickLabelStyle(color: primaryColor);
-                    settleTimePlot.Plot.YAxis.TickLabelStyle(color: primaryColor);
-                    settleTimePlot.Plot.Grid(color: System.Drawing.Color.FromArgb(50, primaryColor.R, primaryColor.G, primaryColor.B));
+                    // Get NINA theme colors and style axes/grid to match
+                    var primaryColor = NinaThemeWatcher.GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
+                    ChartTheme.ApplyColors(settleTimePlot, primaryColor);
 
                     // ✅ Attach tooltip event handlers
-                    AttachSettleTimeTooltip(settleTimePlot);
+                    ChartTooltipHelper.AttachSettleTimeTooltip(
+                        settleTimePlot,
+                        () => settleTimeValues,
+                        text => SettleTimeTooltipText = text,
+                        visible => SettleTimeTooltipVisible = visible);
 
                     Logger.Info("SettleTimePlot created (lazy loading)");
                 }
@@ -1466,70 +1453,8 @@ namespace DitherStatistics.Plugin {
         private void UpdatePixelShiftChart() {
             try {
                 if (PixelShiftPlot == null) return;
-
-                // Clear plot
-                PixelShiftPlot.Plot.Clear();
-
-                // Update colors dynamically (in case theme changed)
-                UpdateChartColors(PixelShiftPlot);
-
-                if (pixelShiftValues.Count == 0) {
-                    PixelShiftPlot.Render();
-                    return;
-                }
-
-                // Extract data
-                double[] xData = pixelShiftValues.Select(p => p.X).ToArray();
-                double[] yData = pixelShiftValues.Select(p => p.Y).ToArray();
-
-                // Add connection line (thin, semi-transparent)
-                if (pixelShiftValues.Count > 1) {
-                    var connectionLine = PixelShiftPlot.Plot.AddScatter(xData, yData);
-                    connectionLine.Color = System.Drawing.Color.FromArgb(80, 100, 149, 237);
-                    connectionLine.LineWidth = 1;
-                    connectionLine.MarkerSize = 0;
-                    connectionLine.Label = "Connections";
-                }
-
-                // Add gradient-colored scatter points
-                for (int i = 0; i < pixelShiftValues.Count; i++) {
-                    double ratio = pixelShiftValues.Count > 1 ? (double)i / (pixelShiftValues.Count - 1) : 1.0;
-                    byte red = (byte)(60 + (200 - 60) * ratio);
-                    var pointColor = System.Drawing.Color.FromArgb(255, red, 0, 0);
-
-                    var scatter = PixelShiftPlot.Plot.AddScatter(
-                        new double[] { xData[i] },
-                        new double[] { yData[i] }
-                    );
-                    scatter.Color = pointColor;
-                    scatter.MarkerSize = 6;
-                    scatter.MarkerShape = MarkerShape.filledCircle;
-                    scatter.LineWidth = 0;
-                }
-
-                // Highlight last point in lime green
-                if (pixelShiftValues.Count > 0) {
-                    int lastIndex = pixelShiftValues.Count - 1;
-                    var lastPoint = PixelShiftPlot.Plot.AddScatter(
-                        new double[] { xData[lastIndex] },
-                        new double[] { yData[lastIndex] }
-                    );
-                    lastPoint.Color = System.Drawing.Color.Lime;
-                    lastPoint.MarkerSize = 8;
-                    lastPoint.MarkerShape = MarkerShape.filledCircle;
-                    lastPoint.LineWidth = 0;
-                    lastPoint.Label = "Latest";
-                }
-
-                // Add crosshair at origin with dynamic color
-                var primaryColor = GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
-                PixelShiftPlot.Plot.AddVerticalLine(0, primaryColor, 2);
-                PixelShiftPlot.Plot.AddHorizontalLine(0, primaryColor, 2);
-
-                // Auto-scale and refresh
-                PixelShiftPlot.Plot.AxisAuto();
-                PixelShiftPlot.Render();
-
+                var primaryColor = NinaThemeWatcher.GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
+                PixelShiftChartRenderer.Render(PixelShiftPlot, pixelShiftValues, primaryColor);
             } catch (Exception ex) {
                 Logger.Error($"Error updating pixel shift chart: {ex.Message}");
             }
@@ -1538,180 +1463,11 @@ namespace DitherStatistics.Plugin {
         private void UpdateSettleTimeChart() {
             try {
                 if (SettleTimePlot == null) return;
-
-                // Clear plot
-                SettleTimePlot.Plot.Clear();
-
-                // Update colors dynamically (in case theme changed)
-                UpdateChartColors(SettleTimePlot);
-
-                if (settleTimeValues.Count == 0) {
-                    SettleTimePlot.Render();
-                    return;
-                }
-
-                // X-axis: Dither numbers (1, 2, 3, ...)
-                double[] xData = Enumerable.Range(1, settleTimeValues.Count).Select(i => (double)i).ToArray();
-                double[] yData = settleTimeValues.ToArray();
-
-                // Add main settle time line
-                var settleTimeLine = SettleTimePlot.Plot.AddScatter(xData, yData);
-                settleTimeLine.Color = System.Drawing.Color.DodgerBlue;
-                settleTimeLine.LineWidth = 2;
-                settleTimeLine.MarkerSize = 8;
-                settleTimeLine.MarkerShape = MarkerShape.filledCircle;
-                settleTimeLine.Label = "Settle Time";
-
-                // Add average line if we have statistics
-                if (AverageSettleTime > 0 && settleTimeValues.Count > 0) {
-                    double[] avgData = Enumerable.Repeat(AverageSettleTime, settleTimeValues.Count).ToArray();
-                    var avgLine = SettleTimePlot.Plot.AddScatter(xData, avgData);
-                    avgLine.Color = System.Drawing.Color.Red;
-                    avgLine.LineWidth = 2;
-                    avgLine.MarkerSize = 0;
-                    avgLine.LineStyle = LineStyle.Dash;
-                    avgLine.Label = "Average";
-
-                    // Add Avg ± StdDev lines
-                    if (StdDevSettleTime > 0) {
-                        double[] lowerData = Enumerable.Repeat(Math.Max(0, AverageSettleTime - StdDevSettleTime), settleTimeValues.Count).ToArray();
-                        double[] upperData = Enumerable.Repeat(AverageSettleTime + StdDevSettleTime, settleTimeValues.Count).ToArray();
-
-                        var lowerLine = SettleTimePlot.Plot.AddScatter(xData, lowerData);
-                        lowerLine.Color = System.Drawing.Color.FromArgb(120, 255, 0, 0);
-                        lowerLine.LineWidth = 2;
-                        lowerLine.MarkerSize = 0;
-                        lowerLine.LineStyle = LineStyle.Dot;
-                        lowerLine.Label = "Avg - StdDev";
-
-                        var upperLine = SettleTimePlot.Plot.AddScatter(xData, upperData);
-                        upperLine.Color = System.Drawing.Color.FromArgb(120, 255, 0, 0);
-                        upperLine.LineWidth = 2;
-                        upperLine.MarkerSize = 0;
-                        upperLine.LineStyle = LineStyle.Dot;
-                        upperLine.Label = "Avg + StdDev";
-                    }
-                }
-
-                // Disable built-in legend (we'll show it below the chart in XAML)
-                SettleTimePlot.Plot.Legend(enable: false);
-
-                // Auto-scale (will respect 0 as minimum) and refresh
-                SettleTimePlot.Plot.AxisAuto();
-                SettleTimePlot.Plot.SetAxisLimits(yMin: 0);
-                SettleTimePlot.Render();
-
+                var primaryColor = NinaThemeWatcher.GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
+                SettleTimeChartRenderer.Render(SettleTimePlot, settleTimeValues, AverageSettleTime, StdDevSettleTime, primaryColor);
             } catch (Exception ex) {
                 Logger.Error($"Error updating settle time chart: {ex.Message}");
             }
-        }
-
-        /// <summary>
-        /// Attach tooltip functionality to Pixel Shift Plot
-        /// Tooltip shows: "ΔX: 2.71 px  ΔY: -3.29 px"
-        /// </summary>
-        private void AttachPixelShiftTooltip(ScottPlot.WpfPlot plot) {
-            plot.MouseMove += (s, e) => {
-                try {
-                    if (pixelShiftValues.Count == 0) {
-                        PixelShiftTooltipVisible = false;
-                        return;
-                    }
-
-                    // Get mouse coordinates in plot space
-                    var mouseCoords = plot.GetMouseCoordinates();
-
-                    // Find nearest point
-                    int nearestIndex = -1;
-                    double minDistance = double.MaxValue;
-
-                    for (int i = 0; i < pixelShiftValues.Count; i++) {
-                        var point = pixelShiftValues[i];
-                        double distance = Math.Sqrt(
-                            Math.Pow(point.X - mouseCoords.x, 2) +
-                            Math.Pow(point.Y - mouseCoords.y, 2)
-                        );
-
-                        if (distance < minDistance) {
-                            minDistance = distance;
-                            nearestIndex = i;
-                        }
-                    }
-
-                    // Show tooltip if within reasonable distance
-                    if (nearestIndex >= 0) {
-                        var axisLimits = plot.Plot.GetAxisLimits();
-                        double xRange = axisLimits.XMax - axisLimits.XMin;
-                        double yRange = axisLimits.YMax - axisLimits.YMin;
-                        double threshold = Math.Sqrt(xRange * xRange + yRange * yRange) * 0.05; // 5% of diagonal
-
-                        if (minDistance < threshold) {
-                            var point = pixelShiftValues[nearestIndex];
-                            PixelShiftTooltipText = $"ΔX: {point.DeltaX:F2} px  ΔY: {point.DeltaY:F2} px";
-                            PixelShiftTooltipVisible = true;
-                        } else {
-                            PixelShiftTooltipVisible = false;
-                        }
-                    } else {
-                        PixelShiftTooltipVisible = false;
-                    }
-                } catch (Exception ex) {
-                    Logger.Error($"Error in PixelShift tooltip: {ex.Message}");
-                }
-            };
-
-            plot.MouseLeave += (s, e) => {
-                PixelShiftTooltipVisible = false;
-            };
-        }
-
-        /// <summary>
-        /// Attach tooltip functionality to Settle Time Plot
-        /// Tooltip shows: "Dither #5: 12.34s"
-        /// </summary>
-        private void AttachSettleTimeTooltip(ScottPlot.WpfPlot plot) {
-            plot.MouseMove += (s, e) => {
-                try {
-                    if (settleTimeValues.Count == 0) {
-                        SettleTimeTooltipVisible = false;
-                        return;
-                    }
-
-                    // Get mouse coordinates in plot space
-                    var mouseCoords = plot.GetMouseCoordinates();
-
-                    // Find nearest point (X coordinate is dither number: 1, 2, 3, ...)
-                    int ditherNumber = (int)Math.Round(mouseCoords.x);
-                    int index = ditherNumber - 1; // Convert to 0-based index
-
-                    if (index >= 0 && index < settleTimeValues.Count) {
-                        double settleTime = settleTimeValues[index];
-
-                        // Calculate distance to check if mouse is close enough
-                        double yValue = settleTime;
-                        double distance = Math.Abs(mouseCoords.y - yValue);
-
-                        var axisLimits = plot.Plot.GetAxisLimits();
-                        double yRange = axisLimits.YMax - axisLimits.YMin;
-                        double threshold = yRange * 0.1; // 10% of Y range
-
-                        if (distance < threshold) {
-                            SettleTimeTooltipText = $"Dither #{ditherNumber}: {settleTime:F2}s";
-                            SettleTimeTooltipVisible = true;
-                        } else {
-                            SettleTimeTooltipVisible = false;
-                        }
-                    } else {
-                        SettleTimeTooltipVisible = false;
-                    }
-                } catch (Exception ex) {
-                    Logger.Error($"Error in SettleTime tooltip: {ex.Message}");
-                }
-            };
-
-            plot.MouseLeave += (s, e) => {
-                SettleTimeTooltipVisible = false;
-            };
         }
 
         #endregion
@@ -1865,12 +1621,8 @@ namespace DitherStatistics.Plugin {
                 }
 
                 // Stop theme color monitoring timer
-                if (themeColorTimer != null) {
-                    themeColorTimer.Tick -= OnThemeColorTimerTick;
-                    themeColorTimer.Stop();
-                    themeColorTimer = null;
-                    Logger.Info("Theme color monitoring timer stopped");
-                }
+                themeWatcher.PrimaryColorChanged -= OnThemeColorChanged;
+                themeWatcher.Dispose();
 
                 // Dispose order matters: the client's Disconnect fires "Disconnected",
                 // which lets the optimizer abort its running collection window (the
@@ -1892,124 +1644,26 @@ namespace DitherStatistics.Plugin {
         }
 
         /// <summary>
-        /// Start monitoring theme color changes to update charts dynamically
-        /// Checks every 500ms if PrimaryBrush color has changed
+        /// Raised by the theme watcher when PrimaryBrush changes; refresh both
+        /// charts' colors immediately (same dispatcher hop as before the split).
         /// </summary>
-        private void StartThemeColorMonitoring() {
-            try {
-                // Initialize last color
-                lastPrimaryColor = GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
-                Logger.Info($"Initial PrimaryBrush color: R:{lastPrimaryColor.R} G:{lastPrimaryColor.G} B:{lastPrimaryColor.B}");
-
-                // Use Application.Current.Dispatcher to ensure we're on UI thread
-                Application.Current.Dispatcher.BeginInvoke(new Action(() => {
-                    try {
-                        themeColorTimer = new System.Windows.Threading.DispatcherTimer();
-                        themeColorTimer.Interval = TimeSpan.FromMilliseconds(500);
-                        themeColorTimer.Tick += OnThemeColorTimerTick;
-                        themeColorTimer.Start();
-                        Logger.Info("Theme color monitoring timer started on UI thread");
-                    } catch (Exception ex) {
-                        Logger.Error($"Failed to start timer on UI thread: {ex.Message}");
+        private void OnThemeColorChanged(object sender, System.Drawing.Color newColor) {
+            Application.Current.Dispatcher.BeginInvoke(new Action(() => {
+                try {
+                    if (PixelShiftPlot != null) {
+                        Logger.Debug("Updating PixelShiftPlot colors...");
+                        ChartTheme.ApplyColors(PixelShiftPlot, newColor);
+                        PixelShiftPlot.Render();
                     }
-                }));
-            } catch (Exception ex) {
-                Logger.Error($"Failed to start theme color monitoring: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Timer tick handler for theme color monitoring
-        /// </summary>
-        private void OnThemeColorTimerTick(object sender, EventArgs e) {
-            try {
-                var currentPrimaryColor = GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
-
-                // Check if color changed
-                if (currentPrimaryColor.ToArgb() != lastPrimaryColor.ToArgb()) {
-                    Logger.Info($"Theme color CHANGED! Old: R:{lastPrimaryColor.R} G:{lastPrimaryColor.G} B:{lastPrimaryColor.B} -> New: R:{currentPrimaryColor.R} G:{currentPrimaryColor.G} B:{currentPrimaryColor.B}");
-                    lastPrimaryColor = currentPrimaryColor;
-
-                    // Update both charts immediately
-                    Application.Current.Dispatcher.BeginInvoke(new Action(() => {
-                        try {
-                            if (PixelShiftPlot != null) {
-                                Logger.Debug("Updating PixelShiftPlot colors...");
-                                UpdateChartColors(PixelShiftPlot);
-                                PixelShiftPlot.Render();
-                            }
-                            if (SettleTimePlot != null) {
-                                Logger.Debug("Updating SettleTimePlot colors...");
-                                UpdateChartColors(SettleTimePlot);
-                                SettleTimePlot.Render();
-                            }
-                        } catch (Exception ex) {
-                            Logger.Error($"Error updating charts after color change: {ex.Message}");
-                        }
-                    }));
+                    if (SettleTimePlot != null) {
+                        Logger.Debug("Updating SettleTimePlot colors...");
+                        ChartTheme.ApplyColors(SettleTimePlot, newColor);
+                        SettleTimePlot.Render();
+                    }
+                } catch (Exception ex) {
+                    Logger.Error($"Error updating charts after color change: {ex.Message}");
                 }
-            } catch (Exception ex) {
-                Logger.Error($"Error in theme color monitoring tick: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Update chart axis, grid, and tick colors to match current theme
-        /// Called every time charts are updated to ensure colors stay in sync with theme
-        /// </summary>
-        private void UpdateChartColors(ScottPlot.WpfPlot plot) {
-            try {
-                var primaryColor = GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
-
-                // Set axis label colors
-                plot.Plot.XAxis.LabelStyle(color: primaryColor);
-                plot.Plot.YAxis.LabelStyle(color: primaryColor);
-
-                // Set axis, grid, and tick colors
-                plot.Plot.XAxis.Color(primaryColor);
-                plot.Plot.YAxis.Color(primaryColor);
-                plot.Plot.XAxis.TickLabelStyle(color: primaryColor);
-                plot.Plot.YAxis.TickLabelStyle(color: primaryColor);
-                plot.Plot.Grid(color: System.Drawing.Color.FromArgb(50, primaryColor.R, primaryColor.G, primaryColor.B));
-            } catch (Exception ex) {
-                Logger.Warning($"Error updating chart colors: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Helper method to get NINA theme color from dynamic resource
-        /// Converts WPF SolidColorBrush to System.Drawing.Color for ScottPlot
-        /// </summary>
-        private System.Drawing.Color GetThemeColor(string resourceKey, System.Drawing.Color fallback) {
-            try {
-                // Try to get from Application resources first
-                if (Application.Current?.Resources[resourceKey] is SolidColorBrush brush) {
-                    var wpfColor = brush.Color;
-                    var color = System.Drawing.Color.FromArgb(wpfColor.A, wpfColor.R, wpfColor.G, wpfColor.B);
-                    Logger.Debug($"GetThemeColor('{resourceKey}'): Found Brush - R:{color.R} G:{color.G} B:{color.B} A:{color.A}");
-                    return color;
-                }
-
-                // Try to get Color directly (some resources might be Color instead of Brush)
-                if (Application.Current?.Resources[resourceKey] is System.Windows.Media.Color wpfColor2) {
-                    var color = System.Drawing.Color.FromArgb(wpfColor2.A, wpfColor2.R, wpfColor2.G, wpfColor2.B);
-                    Logger.Debug($"GetThemeColor('{resourceKey}'): Found Color - R:{color.R} G:{color.G} B:{color.B} A:{color.A}");
-                    return color;
-                }
-
-                // Try MainWindow resources if available
-                if (Application.Current?.MainWindow?.Resources[resourceKey] is SolidColorBrush brush2) {
-                    var wpfColor = brush2.Color;
-                    var color = System.Drawing.Color.FromArgb(wpfColor.A, wpfColor.R, wpfColor.G, wpfColor.B);
-                    Logger.Debug($"GetThemeColor('{resourceKey}'): Found in MainWindow Brush - R:{color.R} G:{color.G} B:{color.B} A:{color.A}");
-                    return color;
-                }
-
-                Logger.Warning($"GetThemeColor('{resourceKey}'): Resource not found, using fallback R:{fallback.R} G:{fallback.G} B:{fallback.B}");
-            } catch (Exception ex) {
-                Logger.Error($"Failed to get theme color '{resourceKey}': {ex.Message}");
-            }
-            return fallback;
+            }));
         }
 
         /// <summary>
