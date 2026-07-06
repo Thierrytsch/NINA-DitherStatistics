@@ -53,11 +53,14 @@ namespace DitherStatistics.Plugin {
         /// <summary>Starts 500 ms polling of PrimaryBrush; the timer itself is created on the UI thread.</summary>
         public void Start() {
             try {
-                lastPrimaryColor = GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
-                Logger.Info($"Initial PrimaryBrush color: R:{lastPrimaryColor.R} G:{lastPrimaryColor.G} B:{lastPrimaryColor.B}");
-
                 Application.Current.Dispatcher.BeginInvoke(new Action(() => {
                     try {
+                        // The theme brushes are owned by the UI thread; the VM constructor
+                        // (MEF composition) may run elsewhere, so read the initial color
+                        // here on the UI thread as well
+                        lastPrimaryColor = GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
+                        Logger.Info($"Initial PrimaryBrush color: R:{lastPrimaryColor.R} G:{lastPrimaryColor.G} B:{lastPrimaryColor.B}");
+
                         themeColorTimer = new System.Windows.Threading.DispatcherTimer();
                         themeColorTimer.Interval = TimeSpan.FromMilliseconds(500);
                         themeColorTimer.Tick += OnTimerTick;

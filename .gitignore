@@ -127,3 +127,6 @@ packages/
 
 ## Claude
 .claude/
+
+## Smoke test run artifacts (screenshots, reports, log/data copies)
+/SmokeTest/artifacts/
