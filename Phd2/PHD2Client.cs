@@ -15,23 +15,10 @@ namespace DitherStatistics.Plugin {
     /// Connects to PHD2 on port 4400 (or 4401, 4402... for multiple instances)
     /// </summary>
     public class PHD2Client : IDisposable {
-        // Recommendation profiles. The settle tolerance is an empirical quantile of the
-        // distance-from-lock distribution during stable guiding: a lower quantile demands
-        // more confidence that guiding is back to normal (longer settling), it does NOT
-        // improve image quality. Index order: 0=Strict(P90), 1=Standard(P95), 2=Fast(P99).
-        private const int PROFILE_COUNT = 3;
-        private static readonly double[] PROFILE_QUANTILES = { 0.90, 0.95, 0.99 };
-        private static readonly string[] PROFILE_LABELS = { "P90", "P95", "P99" };
-
         // Rolling reference window of stable-guiding distances used for the quantiles;
         // bounded by count and age so the thresholds track current seeing conditions
         private const int REFERENCE_MAX_POINTS = 400;
         private static readonly TimeSpan REFERENCE_MAX_AGE = TimeSpan.FromMinutes(15);
-        private const int REFERENCE_MIN_POINTS = 20;
-
-        // A dither series counts as "stable" at the first point from which this many
-        // consecutive points stay below the threshold (debounce against single dips)
-        private const int STABLE_CONSECUTIVE_POINTS = 3;
 
         // Collection window per dither: until SettleDone + POST_SETTLE_STEPS guide steps,
         // with a hard cap in case SettleDone never arrives
@@ -67,15 +54,6 @@ namespace DitherStatistics.Plugin {
         // Rolling window of stable-guiding distances (guarded by referenceLock)
         private readonly object referenceLock = new object();
         private readonly List<KeyValuePair<DateTime, double>> referenceWindow = new List<KeyValuePair<DateTime, double>>();
-
-        // Per-series result of the time-to-stable analysis
-        private class SeriesSettleAnalysis {
-            public int DitherSeriesId;
-            public DitherSeriesInfo Info;
-            public bool Excluded;                                             // settle failed or star lost
-            public double[] Thresholds = new double[PROFILE_COUNT];
-            public double?[] TimeToStable = new double?[PROFILE_COUNT];       // null = never stabilized in window
-        }
 
         // ditherDataLock guards allDitherData, seriesInfos, currentDitherSeries,
         // currentSeriesInfo and the collection state flags
@@ -605,14 +583,7 @@ namespace DitherStatistics.Plugin {
                 values = referenceWindow.Select(p => p.Value).ToList();
             }
 
-            var thresholds = new double[PROFILE_COUNT];
-            if (values.Count < REFERENCE_MIN_POINTS) {
-                return thresholds;
-            }
-            for (int p = 0; p < PROFILE_COUNT; p++) {
-                thresholds[p] = DitherStatistics.CalculateQuantile(values, PROFILE_QUANTILES[p]);
-            }
-            return thresholds;
+            return DitherAnalysis.CalculateThresholds(values);
         }
 
         /// <summary>
@@ -779,12 +750,12 @@ namespace DitherStatistics.Plugin {
                     (runningRMS, rmsStdDev) = ComputeSessionStatsLocked();
                 }
 
-                var analyses = AnalyzeSeries(dataSnapshot, infoSnapshot, currentThresholds);
+                var analyses = DitherAnalysis.AnalyzeSeries(dataSnapshot, infoSnapshot, currentThresholds);
 
                 WriteDitherAnalysisFile(dataSnapshot, currentThresholds, runningRMS, rmsStdDev, profileName);
                 WriteSettleAnalysisFile(analyses, currentThresholds, profileName);
 
-                var recommendation = CalculateRecommendation(analyses, currentThresholds, runningRMS, rmsStdDev);
+                var recommendation = DitherAnalysis.CalculateRecommendation(analyses, currentThresholds, runningRMS, rmsStdDev, currentGuideExposure, GuiderPixelScaleArcsec);
                 if (recommendation != null) {
                     Logger.Info($"PHD2Client: Dither recommendation - Events: {recommendation.DitherEventsAnalyzed} ({recommendation.ExcludedSeries} excluded), " +
                         $"Tolerance: {recommendation.SettlePixelTolerance_Quality:F2}/{recommendation.SettlePixelTolerance_Balanced:F2}/{recommendation.SettlePixelTolerance_Performance:F2} px, " +
@@ -792,6 +763,10 @@ namespace DitherStatistics.Plugin {
                         $"Timeout: {recommendation.SettleTimeout_Quality:F0}/{recommendation.SettleTimeout_Balanced:F0}/{recommendation.SettleTimeout_Performance:F0} s, " +
                         $"MinSettle: {recommendation.MinSettleTime_Balanced:F1} s");
                     DitherRecommendationUpdated?.Invoke(this, recommendation);
+                } else if (analyses.Count == 0) {
+                    Logger.Info("PHD2Client: No dither series in data, skipping recommendation");
+                } else {
+                    Logger.Info("PHD2Client: No reference distribution available yet, skipping recommendation");
                 }
 
                 Logger.Info($"PHD2Client: RunAnalysisAndRecommendation completed - {dataSnapshot.Count} points, {analyses.Count} series");
@@ -799,172 +774,6 @@ namespace DitherStatistics.Plugin {
             } catch (Exception ex) {
                 Logger.Error($"PHD2Client: Error in RunAnalysisAndRecommendation: {ex.Message}");
             }
-        }
-
-        /// <summary>
-        /// Compute time-to-stable per dither series and profile: the elapsed time from the
-        /// dither event to the first point from which STABLE_CONSECUTIVE_POINTS consecutive
-        /// points stay below the profile's threshold. Series prefer their stored (at
-        /// collection time) thresholds; legacy series without metadata fall back to the
-        /// current thresholds and to their first point as time zero.
-        /// </summary>
-        private List<SeriesSettleAnalysis> AnalyzeSeries(List<DitherDataPoint> data, Dictionary<int, DitherSeriesInfo> infos, double[] currentThresholds) {
-            var result = new List<SeriesSettleAnalysis>();
-
-            foreach (var series in data.GroupBy(p => p.DitherSeriesId).OrderBy(g => g.Key)) {
-                var points = series.OrderBy(p => p.Timestamp).ToList();
-
-                if (!infos.TryGetValue(series.Key, out DitherSeriesInfo info) || info == null) {
-                    info = new DitherSeriesInfo {
-                        DitherSeriesId = series.Key,
-                        DitherEventTime = points[0].Timestamp
-                    };
-                }
-
-                var analysis = new SeriesSettleAnalysis {
-                    DitherSeriesId = series.Key,
-                    Info = info,
-                    Excluded = info.SettleFailed || info.StarLost
-                };
-
-                double[] storedThresholds = { info.ThresholdP90, info.ThresholdP95, info.ThresholdP99 };
-
-                for (int p = 0; p < PROFILE_COUNT; p++) {
-                    double threshold = storedThresholds[p] > 0 ? storedThresholds[p] : currentThresholds[p];
-                    analysis.Thresholds[p] = threshold;
-                    if (threshold <= 0) continue;  // no usable reference distribution
-
-                    for (int i = 0; i + STABLE_CONSECUTIVE_POINTS <= points.Count; i++) {
-                        bool stable = true;
-                        for (int k = 0; k < STABLE_CONSECUTIVE_POINTS; k++) {
-                            if (points[i + k].PairRMS > threshold) {
-                                stable = false;
-                                break;
-                            }
-                        }
-                        if (stable) {
-                            analysis.TimeToStable[p] = Math.Max(0, (points[i].Timestamp - info.DitherEventTime).TotalSeconds);
-                            break;
-                        }
-                    }
-                }
-
-                result.Add(analysis);
-            }
-
-            return result;
-        }
-
-        /// <summary>
-        /// Build the recommendation from the per-series analyses:
-        /// - Settle tolerance per profile = current reference quantile (fallback: median
-        ///   of the per-series stored thresholds when no reference window exists yet)
-        /// - Min settle time = debounce only (time within tolerance, NOT time to reach it)
-        /// - Expected settle duration per profile = median time-to-stable
-        /// - Settle timeout per profile = (P95 time-to-stable + min settle) × 1.5 safety,
-        ///   at least the longest actually measured settle, rounded up to 10 s
-        /// </summary>
-        private DitherSettingsRecommendation CalculateRecommendation(List<SeriesSettleAnalysis> analyses, double[] currentThresholds, double runningRMS, double rmsStdDev) {
-            if (analyses.Count == 0) {
-                Logger.Info("PHD2Client: No dither series in data, skipping recommendation");
-                return null;
-            }
-
-            double guideExposure = currentGuideExposure > 0 ? currentGuideExposure : 2.0;
-
-            var tolerance = new double[PROFILE_COUNT];
-            for (int p = 0; p < PROFILE_COUNT; p++) {
-                tolerance[p] = currentThresholds[p];
-                if (tolerance[p] <= 0) {
-                    var stored = analyses.Select(a => a.Thresholds[p]).Where(t => t > 0).ToList();
-                    if (stored.Count > 0) {
-                        tolerance[p] = DitherStatistics.CalculateMedian(stored);
-                    }
-                }
-            }
-            if (tolerance.All(t => t <= 0)) {
-                Logger.Info("PHD2Client: No reference distribution available yet, skipping recommendation");
-                return null;
-            }
-
-            // Min settle time is only a debounce against transient dips - the time PHD2
-            // requires the star to STAY within tolerance, not the time to reach it
-            double minSettle = Math.Max(2 * guideExposure, 5.0);
-            minSettle = Math.Round(Math.Ceiling(minSettle / guideExposure) * guideExposure, 1);
-
-            double maxMeasuredSettle = analyses
-                .Where(a => !a.Excluded)
-                .Select(a => a.Info.MeasuredSettleDuration)
-                .DefaultIfEmpty(0)
-                .Max();
-
-            var expected = new double[PROFILE_COUNT];
-            var timeout = new double[PROFILE_COUNT];
-            var used = new int[PROFILE_COUNT];
-            var unstabilized = new int[PROFILE_COUNT];
-            var spread = new double[PROFILE_COUNT];
-
-            for (int p = 0; p < PROFILE_COUNT; p++) {
-                var delays = analyses
-                    .Where(a => !a.Excluded && a.TimeToStable[p].HasValue)
-                    .Select(a => a.TimeToStable[p].Value)
-                    .ToList();
-
-                used[p] = delays.Count;
-                unstabilized[p] = analyses.Count(a => !a.Excluded && a.Thresholds[p] > 0 && !a.TimeToStable[p].HasValue);
-
-                if (delays.Count == 0) continue;
-
-                double median = DitherStatistics.CalculateMedian(delays);
-                expected[p] = Math.Round(Math.Ceiling(median / guideExposure) * guideExposure, 1);
-
-                double p95Delay = DitherStatistics.CalculateQuantile(delays, 0.95);
-                double t = (p95Delay + minSettle) * 1.5;
-                t = Math.Max(t, maxMeasuredSettle);
-                timeout[p] = Math.Ceiling(t / 10.0) * 10.0;
-
-                if (delays.Count >= 4) {
-                    spread[p] = Math.Round(
-                        DitherStatistics.CalculateQuantile(delays, 0.75) - DitherStatistics.CalculateQuantile(delays, 0.25), 1);
-                }
-            }
-
-            return new DitherSettingsRecommendation {
-                SettlePixelTolerance_Quality = Math.Round(tolerance[0], 2),
-                SettlePixelTolerance_Balanced = Math.Round(tolerance[1], 2),
-                SettlePixelTolerance_Performance = Math.Round(tolerance[2], 2),
-
-                MinSettleTime_Quality = minSettle,
-                MinSettleTime_Balanced = minSettle,
-                MinSettleTime_Performance = minSettle,
-
-                ExpectedSettleDuration_Quality = expected[0],
-                ExpectedSettleDuration_Balanced = expected[1],
-                ExpectedSettleDuration_Performance = expected[2],
-
-                SettleTimeout_Quality = timeout[0],
-                SettleTimeout_Balanced = timeout[1],
-                SettleTimeout_Performance = timeout[2],
-
-                SeriesUsed_Quality = used[0],
-                SeriesUsed_Balanced = used[1],
-                SeriesUsed_Performance = used[2],
-
-                Unstabilized_Quality = unstabilized[0],
-                Unstabilized_Balanced = unstabilized[1],
-                Unstabilized_Performance = unstabilized[2],
-
-                SettleDelaySpread_Quality = spread[0],
-                SettleDelaySpread_Balanced = spread[1],
-                SettleDelaySpread_Performance = spread[2],
-
-                DitherEventsAnalyzed = analyses.Count,
-                ExcludedSeries = analyses.Count(a => a.Excluded),
-                CurrentRunningRMS = runningRMS,
-                CurrentRMSStdDev = rmsStdDev,
-                GuideExposure = guideExposure,
-                GuiderPixelScaleArcsec = GuiderPixelScaleArcsec ?? 0
-            };
         }
 
         /// <summary>
@@ -987,8 +796,8 @@ namespace DitherStatistics.Plugin {
                     writer.WriteLine($"# Running_RMS: {runningRMS:F4}");
                     writer.WriteLine($"# RMS_StdDev: {rmsStdDev:F4}");
 
-                    for (int p = 0; p < PROFILE_COUNT; p++) {
-                        writer.WriteLine($"# Threshold_{PROFILE_LABELS[p]}: {thresholds[p]:F4} ({PROFILE_QUANTILES[p]:P0} quantile of the stable-guiding reference window)");
+                    for (int p = 0; p < DitherAnalysis.PROFILE_COUNT; p++) {
+                        writer.WriteLine($"# Threshold_{DitherAnalysis.PROFILE_LABELS[p]}: {thresholds[p]:F4} ({DitherAnalysis.PROFILE_QUANTILES[p]:P0} quantile of the stable-guiding reference window)");
                     }
 
                     writer.WriteLine("# Analysis_Value_PXX = Threshold_PXX - PairRMS");
@@ -996,8 +805,8 @@ namespace DitherStatistics.Plugin {
 
                     // Build header with all analysis value columns
                     string header = "DitherSeries,dx,dy,PairRMS";
-                    for (int p = 0; p < PROFILE_COUNT; p++) {
-                        header += $",Analysis_Value_{PROFILE_LABELS[p]}";
+                    for (int p = 0; p < DitherAnalysis.PROFILE_COUNT; p++) {
+                        header += $",Analysis_Value_{DitherAnalysis.PROFILE_LABELS[p]}";
                     }
                     header += ",Exposure";
                     writer.WriteLine(header);
@@ -1006,7 +815,7 @@ namespace DitherStatistics.Plugin {
                     foreach (var point in data) {
                         string line = $"{point.DitherSeriesId},{point.DX:F4},{point.DY:F4},{point.PairRMS:F4}";
 
-                        for (int p = 0; p < PROFILE_COUNT; p++) {
+                        for (int p = 0; p < DitherAnalysis.PROFILE_COUNT; p++) {
                             line += $",{(thresholds[p] - point.PairRMS):F4}";
                         }
 
@@ -1027,28 +836,28 @@ namespace DitherStatistics.Plugin {
         /// versions before 1.6): one line per dither series with the settle outcome and
         /// the time-to-stable per profile ("-" = never stabilized within the window)
         /// </summary>
-        private void WriteSettleAnalysisFile(List<SeriesSettleAnalysis> analyses, double[] currentThresholds, string profileName) {
+        private void WriteSettleAnalysisFile(List<DitherAnalysis.SeriesSettleAnalysis> analyses, double[] currentThresholds, string profileName) {
             try {
                 string filePath = GetDiagnosticFilePath(profileName, "settle_analysis");
 
                 using (StreamWriter writer = new StreamWriter(filePath, append: false)) {
-                    for (int p = 0; p < PROFILE_COUNT; p++) {
-                        writer.WriteLine($"# Current_Threshold_{PROFILE_LABELS[p]}: {currentThresholds[p]:F4}");
+                    for (int p = 0; p < DitherAnalysis.PROFILE_COUNT; p++) {
+                        writer.WriteLine($"# Current_Threshold_{DitherAnalysis.PROFILE_LABELS[p]}: {currentThresholds[p]:F4}");
                     }
-                    writer.WriteLine($"# TTS_PXX = time-to-stable in seconds: from the dither event until {STABLE_CONSECUTIVE_POINTS} consecutive points stay below the threshold");
+                    writer.WriteLine($"# TTS_PXX = time-to-stable in seconds: from the dither event until {DitherAnalysis.STABLE_CONSECUTIVE_POINTS} consecutive points stay below the threshold");
                     writer.WriteLine("# Thr_PXX = threshold the series was analyzed with (stored at collection time; current thresholds for legacy series)");
                     writer.WriteLine("# Excluded series (failed settle or star lost) are listed but not used for recommendations");
                     writer.WriteLine();
 
                     string header = "DitherSeries,DitherTime,Excluded,SettleFailed,StarLost,MeasuredSettle_s";
-                    for (int p = 0; p < PROFILE_COUNT; p++) {
-                        header += $",Thr_{PROFILE_LABELS[p]},TTS_{PROFILE_LABELS[p]}";
+                    for (int p = 0; p < DitherAnalysis.PROFILE_COUNT; p++) {
+                        header += $",Thr_{DitherAnalysis.PROFILE_LABELS[p]},TTS_{DitherAnalysis.PROFILE_LABELS[p]}";
                     }
                     writer.WriteLine(header);
 
                     foreach (var a in analyses.OrderBy(x => x.DitherSeriesId)) {
                         string line = $"{a.DitherSeriesId},{a.Info.DitherEventTime:yyyy-MM-dd HH:mm:ss.fff},{a.Excluded},{a.Info.SettleFailed},{a.Info.StarLost},{a.Info.MeasuredSettleDuration:F1}";
-                        for (int p = 0; p < PROFILE_COUNT; p++) {
+                        for (int p = 0; p < DitherAnalysis.PROFILE_COUNT; p++) {
                             string tts = a.TimeToStable[p].HasValue ? a.TimeToStable[p].Value.ToString("F1") : "-";
                             line += $",{a.Thresholds[p]:F4},{tts}";
                         }
@@ -1056,17 +865,17 @@ namespace DitherStatistics.Plugin {
                     }
 
                     writer.WriteLine();
-                    for (int p = 0; p < PROFILE_COUNT; p++) {
+                    for (int p = 0; p < DitherAnalysis.PROFILE_COUNT; p++) {
                         var delays = analyses
                             .Where(a => !a.Excluded && a.TimeToStable[p].HasValue)
                             .Select(a => a.TimeToStable[p].Value)
                             .ToList();
                         int censored = analyses.Count(a => !a.Excluded && a.Thresholds[p] > 0 && !a.TimeToStable[p].HasValue);
                         if (delays.Count > 0) {
-                            writer.WriteLine($"# {PROFILE_LABELS[p]}: used={delays.Count}, not_stabilized={censored}, " +
+                            writer.WriteLine($"# {DitherAnalysis.PROFILE_LABELS[p]}: used={delays.Count}, not_stabilized={censored}, " +
                                 $"median={DitherStatistics.CalculateMedian(delays):F1}s, p95={DitherStatistics.CalculateQuantile(delays, 0.95):F1}s");
                         } else {
-                            writer.WriteLine($"# {PROFILE_LABELS[p]}: used=0, not_stabilized={censored}");
+                            writer.WriteLine($"# {DitherAnalysis.PROFILE_LABELS[p]}: used=0, not_stabilized={censored}");
                         }
                     }
                 }
