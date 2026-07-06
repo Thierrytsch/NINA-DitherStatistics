@@ -87,5 +87,51 @@ namespace DitherStatistics.Plugin.Tests {
             var values = new List<double> { 2, 4, 4, 4, 5, 5, 7, 9 };
             Assert.Equal(2.0, DitherStatistics.CalculateStdDev(values), 10);
         }
+
+        [Fact]
+        public void Aggregate_NoEvents_ReturnsAllZeros() {
+            var summary = DitherStatistics.Aggregate(new List<DitherEvent>(), new List<PixelShiftPoint>());
+
+            Assert.Equal(0, summary.TotalDithers);
+            Assert.Equal(0, summary.SuccessfulDithers);
+            Assert.Equal(0, summary.SuccessRate);
+            Assert.Equal(0, summary.AverageSettleTime);
+            Assert.Equal(0, summary.TotalDriftX);
+            Assert.Equal(0, summary.TotalDriftY);
+        }
+
+        [Fact]
+        public void Aggregate_MixedSuccessAndFailure_OnlyCountsSuccessfulSettleTimes() {
+            var events = new List<DitherEvent> {
+                new DitherEvent { Success = true, SettleTime = 2.0 },
+                new DitherEvent { Success = true, SettleTime = 4.0 },
+                new DitherEvent { Success = false, SettleTime = 99.0 },
+                new DitherEvent { Success = true, SettleTime = null }, // excluded: no SettleTime
+            };
+
+            var summary = DitherStatistics.Aggregate(events, new List<PixelShiftPoint>());
+
+            Assert.Equal(4, summary.TotalDithers);
+            Assert.Equal(2, summary.SuccessfulDithers);
+            Assert.Equal(50.0, summary.SuccessRate);
+            Assert.Equal(3.0, summary.AverageSettleTime);
+            Assert.Equal(3.0, summary.MedianSettleTime);
+            Assert.Equal(2.0, summary.MinSettleTime);
+            Assert.Equal(4.0, summary.MaxSettleTime);
+        }
+
+        [Fact]
+        public void Aggregate_PixelShiftValues_DriftIsRangeOfCumulativePositions() {
+            var points = new List<PixelShiftPoint> {
+                new PixelShiftPoint(0, 0, 0, 0),
+                new PixelShiftPoint(5, -3, 5, -3),
+                new PixelShiftPoint(-2, 4, -7, 7),
+            };
+
+            var summary = DitherStatistics.Aggregate(new List<DitherEvent>(), points);
+
+            Assert.Equal(7.0, summary.TotalDriftX); // max(5) - min(-2)
+            Assert.Equal(7.0, summary.TotalDriftY); // max(4) - min(-3)
+        }
     }
 }

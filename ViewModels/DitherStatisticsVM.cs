@@ -32,7 +32,6 @@ namespace DitherStatistics.Plugin {
         private readonly PluginSettingsStore settingsStore = new PluginSettingsStore();
         private readonly StatisticsProfileService profileDataService = new StatisticsProfileService();
         private DitherEvent currentDither = null;
-        private readonly Random random = new Random();
 
         // Theme color monitoring
         private readonly NinaThemeWatcher themeWatcher = new NinaThemeWatcher();
@@ -65,9 +64,6 @@ namespace DitherStatistics.Plugin {
 
             // Initialize commands
             InitializeCommands();
-
-            // Initialize quality metrics
-            InitializeQualityMetrics();
 
             // Load quality assessment toggle setting
             LoadQualityAssessmentSetting();
@@ -214,11 +210,6 @@ namespace DitherStatistics.Plugin {
                 RaisePropertyChanged();
             }
         }
-
-        // Formatter functions (kept for potential UI binding)
-        public Func<double, string> XFormatter { get; set; } = value => value.ToString("F1");
-        public Func<double, string> YFormatter { get; set; } = value => value.ToString("F1");
-        public Func<double, string> SettleTimeFormatter { get; set; } = value => value.ToString("F2");
 
         #endregion
 
@@ -449,34 +440,25 @@ namespace DitherStatistics.Plugin {
         /// (arcsec/px = 206.265 * pixelSize[µm] / focalLength[mm]). Falls back to 1.0.
         /// </summary>
         private double GetPixelScaleRatio() {
-            if (pixelScaleRatioOverride > 0) {
-                pixelScaleRatioSource = "manual";
-                return pixelScaleRatioOverride;
-            }
-
             try {
-                double guiderScale = ninaGuiderPixelScale > 0
-                    ? ninaGuiderPixelScale
-                    : (phd2Client?.GuiderPixelScaleArcsec ?? 0);
+                double phd2Scale = phd2Client?.GuiderPixelScaleArcsec ?? 0;
                 double pixelSize = profileService?.ActiveProfile?.CameraSettings?.PixelSize ?? 0;
                 double focalLength = profileService?.ActiveProfile?.TelescopeSettings?.FocalLength ?? 0;
 
-                if (guiderScale > 0 && pixelSize > 0 && focalLength > 0) {
-                    double mainScale = 206.265 * pixelSize / focalLength;
-                    double ratio = guiderScale / mainScale;
-                    if (ratio > 0.01 && ratio < 100) {
-                        pixelScaleRatioSource = ninaGuiderPixelScale > 0 ? "auto/NINA" : "auto/PHD2";
-                        hasLoggedRatioFallback = false;
-                        return ratio;
+                var result = PixelScaleService.Calculate(pixelScaleRatioOverride, ninaGuiderPixelScale, phd2Scale, pixelSize, focalLength);
+                pixelScaleRatioSource = result.Source;
+
+                if (result.ImplausibleWarning != null) {
+                    Logger.Warning(result.ImplausibleWarning);
+                } else if (result.FallbackReason != null) {
+                    if (!hasLoggedRatioFallback) {
+                        Logger.Info($"Pixel scale ratio fallback (1.0). Missing: {result.FallbackReason}");
+                        hasLoggedRatioFallback = true;
                     }
-                    Logger.Warning($"Implausible pixel scale ratio {ratio:F2} (guider {guiderScale:F2}\"/px, main {mainScale:F2}\"/px), using 1.0");
-                } else if (!hasLoggedRatioFallback) {
-                    Logger.Info($"Pixel scale ratio fallback (1.0). Missing: " +
-                        $"guiderScale={(guiderScale > 0 ? guiderScale.ToString("F2") : "n/a (guider not connected in NINA?)")}, " +
-                        $"pixelSize={(pixelSize > 0 ? pixelSize.ToString("F2") : "n/a (set camera pixel size in NINA options!)")}, " +
-                        $"focalLength={(focalLength > 0 ? focalLength.ToString("F0") : "n/a (set telescope focal length in NINA options!)")}");
-                    hasLoggedRatioFallback = true;
+                } else {
+                    hasLoggedRatioFallback = false;
                 }
+                return result.Ratio;
             } catch (Exception ex) {
                 Logger.Warning($"Could not derive pixel scale ratio: {ex.Message}");
             }
@@ -1198,38 +1180,7 @@ namespace DitherStatistics.Plugin {
             }
 
             try {
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string filename = $"DitherEvents_{timestamp}.csv";
-                string path = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                    "N.I.N.A",
-                    "DitherStatistics",
-                    filename
-                );
-
-                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
-
-                // Build CSV content
-                var csv = new System.Text.StringBuilder();
-
-                // Header
-                csv.AppendLine("DitherNumber,StartTime,EndTime,PixelShiftX,PixelShiftY,CumulativeX,CumulativeY,SettleTime,Success");
-
-                // Data rows
-                for (int i = 0; i < ditherEvents.Count; i++) {
-                    var evt = ditherEvents[i];
-                    csv.AppendLine($"{i + 1}," +
-                        $"{evt.StartTime:yyyy-MM-dd HH:mm:ss}," +
-                        $"{evt.EndTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "N/A"}," +
-                        $"{evt.PixelShiftX?.ToString("F4") ?? "N/A"}," +
-                        $"{evt.PixelShiftY?.ToString("F4") ?? "N/A"}," +
-                        $"{evt.CumulativeX:F4}," +
-                        $"{evt.CumulativeY:F4}," +
-                        $"{evt.SettleTime?.ToString("F2") ?? "N/A"}," +
-                        $"{evt.Success}");
-                }
-
-                System.IO.File.WriteAllText(path, csv.ToString());
+                string path = ExportService.ExportDitherEventsCsv(ditherEvents);
                 Logger.Info($"Dither events exported to: {path}");
             } catch (Exception ex) {
                 Logger.Error($"Error exporting dither events: {ex.Message}");
@@ -1248,20 +1199,7 @@ namespace DitherStatistics.Plugin {
             }
 
             try {
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string filename = $"DitherQuality_{timestamp}.txt";
-                string path = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                    "N.I.N.A",
-                    "DitherStatistics",
-                    filename
-                );
-
-                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
-
-                string report = DitherQualityMetrics.FormatMetricsReport(QualityResult);
-                System.IO.File.WriteAllText(path, report);
-
+                string path = ExportService.ExportQualityReport(QualityResult);
                 Logger.Info($"Quality metrics exported to: {path}");
             } catch (Exception ex) {
                 Logger.Error($"Error exporting quality metrics: {ex.Message}");
@@ -1390,11 +1328,6 @@ namespace DitherStatistics.Plugin {
 
         #region Quality Metrics
 
-        private void InitializeQualityMetrics() {
-            RecalculateMetricsCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(RecalculateQualityMetrics);
-            ExportMetricsCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ExportQualityMetrics);
-        }
-
         private void UpdateQualityMetrics() {
             if (pixelShiftValues.Count < 4) {
                 QualityResult = null;
@@ -1475,41 +1408,22 @@ namespace DitherStatistics.Plugin {
         #region Statistics
 
         private void UpdateStatistics() {
-            var successfulEvents = ditherEvents.Where(d => d.Success && d.SettleTime.HasValue).ToList();
+            var summary = DitherStatistics.Aggregate(ditherEvents, pixelShiftValues);
 
-            TotalDithers = ditherEvents.Count;
-            SuccessfulDithers = successfulEvents.Count;
-            SuccessRate = TotalDithers > 0 ? (double)SuccessfulDithers / TotalDithers * 100 : 0;
+            TotalDithers = summary.TotalDithers;
+            SuccessfulDithers = summary.SuccessfulDithers;
+            SuccessRate = summary.SuccessRate;
+            AverageSettleTime = summary.AverageSettleTime;
+            MedianSettleTime = summary.MedianSettleTime;
+            MinSettleTime = summary.MinSettleTime;
+            MaxSettleTime = summary.MaxSettleTime;
+            StdDevSettleTime = summary.StdDevSettleTime;
+            TotalDriftX = summary.TotalDriftX;
+            TotalDriftY = summary.TotalDriftY;
 
-            if (successfulEvents.Any()) {
-                var settleTimes = successfulEvents.Select(d => d.SettleTime.Value).ToList();
-
-                AverageSettleTime = DitherStatistics.CalculateAverage(settleTimes);
-                MedianSettleTime = DitherStatistics.CalculateMedian(settleTimes);
-                MinSettleTime = settleTimes.Min();
-                MaxSettleTime = settleTimes.Max();
-                StdDevSettleTime = DitherStatistics.CalculateStdDev(settleTimes);
-
+            if (summary.SuccessfulDithers > 0) {
                 // Update settle time chart with new average/stddev lines
                 UpdateSettleTimeChart();
-            } else {
-                AverageSettleTime = 0;
-                MedianSettleTime = 0;
-                MinSettleTime = 0;
-                MaxSettleTime = 0;
-                StdDevSettleTime = 0;
-            }
-
-            // Calculate Total Drift as range (Max - Min) across all points
-            if (pixelShiftValues.Count > 0) {
-                var xValues = pixelShiftValues.Select(p => p.X).ToList();
-                var yValues = pixelShiftValues.Select(p => p.Y).ToList();
-
-                TotalDriftX = xValues.Max() - xValues.Min();
-                TotalDriftY = yValues.Max() - yValues.Min();
-            } else {
-                TotalDriftX = 0.0;
-                TotalDriftY = 0.0;
             }
         }
 
@@ -1716,10 +1630,6 @@ namespace DitherStatistics.Plugin {
                 fallbackGroup.Children.Add(new EllipseGeometry(new Point(10, 10), 8, 8));
                 return fallbackGroup;
             }
-        }
-
-        ~DitherStatisticsVM() {
-            Dispose();
         }
 
         #endregion

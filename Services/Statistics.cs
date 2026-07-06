@@ -48,5 +48,56 @@ namespace DitherStatistics.Plugin {
             }
             return Math.Sqrt(sumSquaredDiff / valueList.Count);
         }
+
+        /// <summary>
+        /// Aggregates the settle-time and pixel-shift statistics shown in the panel
+        /// (Avg/Median/Min/Max/StdDev of successful dithers, success rate, drift range).
+        /// </summary>
+        public static StatisticsSummary Aggregate(IEnumerable<DitherEvent> ditherEvents, IEnumerable<PixelShiftPoint> pixelShiftValues) {
+            var events = new List<DitherEvent>(ditherEvents);
+            var successfulSettleTimes = events
+                .Where(d => d.Success && d.SettleTime.HasValue)
+                .Select(d => d.SettleTime.Value)
+                .ToList();
+
+            var summary = new StatisticsSummary {
+                TotalDithers = events.Count,
+                SuccessfulDithers = successfulSettleTimes.Count
+            };
+            summary.SuccessRate = summary.TotalDithers > 0
+                ? (double)summary.SuccessfulDithers / summary.TotalDithers * 100
+                : 0;
+
+            if (successfulSettleTimes.Count > 0) {
+                summary.AverageSettleTime = CalculateAverage(successfulSettleTimes);
+                summary.MedianSettleTime = CalculateMedian(successfulSettleTimes);
+                summary.MinSettleTime = successfulSettleTimes.Min();
+                summary.MaxSettleTime = successfulSettleTimes.Max();
+                summary.StdDevSettleTime = CalculateStdDev(successfulSettleTimes);
+            }
+
+            var points = new List<PixelShiftPoint>(pixelShiftValues);
+            if (points.Count > 0) {
+                var xValues = points.Select(p => p.X).ToList();
+                var yValues = points.Select(p => p.Y).ToList();
+                summary.TotalDriftX = xValues.Max() - xValues.Min();
+                summary.TotalDriftY = yValues.Max() - yValues.Min();
+            }
+
+            return summary;
+        }
+    }
+
+    public struct StatisticsSummary {
+        public int TotalDithers;
+        public int SuccessfulDithers;
+        public double SuccessRate;
+        public double AverageSettleTime;
+        public double MedianSettleTime;
+        public double MinSettleTime;
+        public double MaxSettleTime;
+        public double StdDevSettleTime;
+        public double TotalDriftX;
+        public double TotalDriftY;
     }
 }
