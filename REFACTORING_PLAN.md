@@ -84,7 +84,7 @@ Reines Verschieben ohne Logikänderung. Alle Namespaces bleiben `DitherStatistic
 
 ---
 
-## Etappe 2 — xUnit-Testprojekt + Kontrakt-Tests
+## Etappe 2 — xUnit-Testprojekt + Kontrakt-Tests ✅ ERLEDIGT
 
 **Komplexität: niedrig | Modell: Sonnet**
 
@@ -97,6 +97,18 @@ Reines Verschieben ohne Logikänderung. Alle Namespaces bleiben `DitherStatistic
   - **JSON-Kontrakt-Test** (Sicherheitsnetz für alle Folgeetappen): serialisiert `PersistedStatisticsData`, `DitherAnalysisSnapshot`, `DitherSettingsRecommendation`, `DitherEvent`, `PixelShiftPoint` und asserted die exakten Property-Namen im JSON
 
 **Verifikation:** `dotnet test` grün; Plugin-Build unverändert; CI-Lauf grün.
+
+✅ `DitherStatistics.Tests` (net8.0-windows, x64) mit `Microsoft.NET.Test.Sdk`/`xunit`/`xunit.runner.visualstudio`,
+ProjectReference auf das Plugin, `NINA.Core` als normale PackageReference (Logger-Auflösung zur Testlaufzeit) und
+`System.Drawing.Common` 8.0.0 gepinnt (sonst MSB3277-Konflikt zwischen der alten net462-Transitive von NINA.Core und
+der net8.0-Version, die ScottPlot über die ProjectReference braucht). Stolperstein: der SDK-Default-Glob (`**/*.cs`)
+des Plugin-Projekts las die Testdateien mit ein — behoben mit `<Compile Remove="DitherStatistics.Tests/**/*.cs" />`
+in `DitherStatistics.csproj`. 29 Tests: `DitherStatistics`-Helfer (Median/Quantile/StdDev, inkl. leer/1-Element/
+Interpolation), `DitherQualityMetrics`-Golden-Test (feste 8-Punkte-Menge, Werte aus dem Ist-Zustand eingefroren) und
+JSON-Kontrakt-Tests für alle sieben Modelltypen (exakte Property-Namen, inkl. `_Quality/_Balanced/_Performance`-Suffixe
+und dass `OptimizerData`/`Recommendation` als JSON `null` statt weggelassen serialisieren). `dotnet test` Schritt in
+`.github/workflows/build-and-release.yaml` ergänzt. Solution um das Testprojekt erweitert (`dotnet sln add`).
+Build Debug + Release weiterhin 0 Fehler (nur die zwei vorbestehenden NU1701-Warnungen, jetzt pro Projekt gemeldet).
 
 ---
 

@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0-windows</TargetFramework>
+		<PlatformTarget>x64</PlatformTarget>
+		<IsPackable>false</IsPackable>
+		<IsTestProject>true</IsTestProject>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+		<PackageReference Include="xunit" Version="2.9.2" />
+		<PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+
+		<!-- The plugin project references NINA.Core with ExcludeAssets="runtime" (NINA supplies it at
+		     plugin-load time). Referenced here as a normal PackageReference so NINA.Core.Utility.Logger
+		     calls resolve at test runtime. Keep newly extracted pure-math classes Logger-free instead
+		     of relying on this (see DitherQualityMetrics for the pattern). -->
+		<PackageReference Include="NINA.Core" Version="3.1.2.9001" />
+
+		<!-- NINA.Core pulls an old net462 System.Drawing.Common transitively, which otherwise
+		     conflicts with the net8.0 one ScottPlot (via the ProjectReference) needs (MSB3277). -->
+		<PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\DitherStatistics.csproj" />
+	</ItemGroup>
+
+</Project>

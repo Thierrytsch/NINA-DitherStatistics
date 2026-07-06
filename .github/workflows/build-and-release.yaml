@@ -43,6 +43,9 @@ jobs:
           dotnet restore
           dotnet build "${{ env.PLUGIN_SLN_NAME }}.sln" -c Release -o ./bin/Release
 
+      - name: Run tests
+        run: dotnet test "${{ env.PLUGIN_SLN_NAME }}.sln" -c Release
+
       - name: Prepare package
         run: |
           Copy-Item "bin/Release/${{ env.PLUGIN_DLL_NAME }}.dll"       "packages/${{ env.PLUGIN_NAME }}/" -Force

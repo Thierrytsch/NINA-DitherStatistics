@@ -12,6 +12,11 @@
 		<Deterministic>true</Deterministic>
 	</PropertyGroup>
 
+	<!-- The default SDK glob (**/*.cs) would otherwise also pick up the sibling test project -->
+	<ItemGroup>
+		<Compile Remove="DitherStatistics.Tests/**/*.cs" />
+	</ItemGroup>
+
 	<!-- ============================================ -->
 	<!-- CENTRAL VERSION - ONLY CHANGE HERE! -->
 	<!-- ============================================ -->
