@@ -28,6 +28,8 @@ namespace DitherStatistics.Plugin {
         private readonly IGuiderMediator guiderMediator;
         private readonly IProfileService profileService;
         private readonly PHD2Client phd2Client;
+        private readonly PluginSettingsStore settingsStore = new PluginSettingsStore();
+        private readonly StatisticsProfileService profileDataService = new StatisticsProfileService();
         private DitherEvent currentDither = null;
         private readonly Random random = new Random();
         private bool hasLoggedConnectionFailure = false;
@@ -372,22 +374,13 @@ namespace DitherStatistics.Plugin {
         // Show disabled message when toggle is OFF (regardless of data availability)
         public bool ShowQualityDisabledMessage => !IsQualityAssessmentEnabled;
 
-        // Settings file path
-        private static readonly string SettingsFilePath = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NINA", "DitherStatistics", "settings.txt"
-        );
-
         private void LoadQualityAssessmentSetting() {
             try {
-                // Load from simple text file
-                if (System.IO.File.Exists(SettingsFilePath)) {
-                    var content = System.IO.File.ReadAllText(SettingsFilePath).Trim();
-                    if (bool.TryParse(content, out bool value)) {
-                        IsQualityAssessmentEnabled = value;
-                        Logger.Info($"Quality Assessment setting loaded from file: {IsQualityAssessmentEnabled}");
-                        return;
-                    }
+                var value = settingsStore.ReadBool(PluginSettingsStore.QualityAssessmentFileName);
+                if (value.HasValue) {
+                    IsQualityAssessmentEnabled = value.Value;
+                    Logger.Info($"Quality Assessment setting loaded from file: {IsQualityAssessmentEnabled}");
+                    return;
                 }
 
                 // Default: OFF
@@ -401,13 +394,7 @@ namespace DitherStatistics.Plugin {
 
         private void SaveQualityAssessmentSetting() {
             try {
-                // Save to simple text file
-                var directory = System.IO.Path.GetDirectoryName(SettingsFilePath);
-                if (!System.IO.Directory.Exists(directory)) {
-                    System.IO.Directory.CreateDirectory(directory);
-                }
-
-                System.IO.File.WriteAllText(SettingsFilePath, IsQualityAssessmentEnabled.ToString());
+                settingsStore.WriteBool(PluginSettingsStore.QualityAssessmentFileName, IsQualityAssessmentEnabled);
                 Logger.Info($"Quality Assessment setting saved to file: {IsQualityAssessmentEnabled}");
             } catch (Exception ex) {
                 Logger.Error($"Error saving Quality Assessment setting: {ex.Message}");
@@ -416,11 +403,6 @@ namespace DitherStatistics.Plugin {
 
         // Drizzle pixfrac and guider->main-camera pixel scale conversion for the
         // quality metrics; persisted as key=value lines (same folder as settings.txt)
-        private static readonly string QualityMetricSettingsFilePath = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NINA", "DitherStatistics", "quality_settings.txt"
-        );
-
         private double qualityPixfrac = 0.6;
         public double QualityPixfrac {
             get => qualityPixfrac;
@@ -499,22 +481,14 @@ namespace DitherStatistics.Plugin {
 
         private void LoadQualityMetricSettings() {
             try {
-                if (!System.IO.File.Exists(QualityMetricSettingsFilePath)) return;
+                var parsed = settingsStore.ReadQualityMetricSettings();
+                if (parsed == null) return;
 
-                foreach (var line in System.IO.File.ReadAllLines(QualityMetricSettingsFilePath)) {
-                    var parts = line.Split('=');
-                    if (parts.Length != 2) continue;
-                    if (!double.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Float,
-                        System.Globalization.CultureInfo.InvariantCulture, out double value)) continue;
-
-                    switch (parts[0].Trim()) {
-                        case "pixfrac":
-                            if (value > 0 && value <= 1.0) qualityPixfrac = value;
-                            break;
-                        case "scaleRatioOverride":
-                            if (value >= 0) pixelScaleRatioOverride = value;
-                            break;
-                    }
+                if (parsed.Value.Pixfrac.HasValue && parsed.Value.Pixfrac > 0 && parsed.Value.Pixfrac <= 1.0) {
+                    qualityPixfrac = parsed.Value.Pixfrac.Value;
+                }
+                if (parsed.Value.ScaleRatioOverride.HasValue && parsed.Value.ScaleRatioOverride >= 0) {
+                    pixelScaleRatioOverride = parsed.Value.ScaleRatioOverride.Value;
                 }
                 Logger.Info($"Quality metric settings loaded: pixfrac={qualityPixfrac:F2}, scaleRatioOverride={pixelScaleRatioOverride:F2}");
             } catch (Exception ex) {
@@ -524,14 +498,7 @@ namespace DitherStatistics.Plugin {
 
         private void SaveQualityMetricSettings() {
             try {
-                var directory = System.IO.Path.GetDirectoryName(QualityMetricSettingsFilePath);
-                if (!System.IO.Directory.Exists(directory)) {
-                    System.IO.Directory.CreateDirectory(directory);
-                }
-
-                var ci = System.Globalization.CultureInfo.InvariantCulture;
-                System.IO.File.WriteAllText(QualityMetricSettingsFilePath,
-                    $"pixfrac={qualityPixfrac.ToString(ci)}\nscaleRatioOverride={pixelScaleRatioOverride.ToString(ci)}");
+                settingsStore.WriteQualityMetricSettings(qualityPixfrac, pixelScaleRatioOverride);
             } catch (Exception ex) {
                 Logger.Error($"Error saving quality metric settings: {ex.Message}");
             }
@@ -665,21 +632,13 @@ namespace DitherStatistics.Plugin {
 
         public bool HasRecommendationWarning => !string.IsNullOrEmpty(RecommendationWarning);
 
-        // Settings file path for optimizer toggle
-        private static readonly string OptimizerSettingsFilePath = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NINA", "DitherStatistics", "optimizer_settings.txt"
-        );
-
         private void LoadDitherOptimizerSetting() {
             try {
-                if (System.IO.File.Exists(OptimizerSettingsFilePath)) {
-                    var content = System.IO.File.ReadAllText(OptimizerSettingsFilePath).Trim();
-                    if (bool.TryParse(content, out bool value)) {
-                        IsDitherOptimizerEnabled = value;
-                        Logger.Info($"Dither Optimizer setting loaded from file: {IsDitherOptimizerEnabled}");
-                        return;
-                    }
+                var value = settingsStore.ReadBool(PluginSettingsStore.OptimizerFileName);
+                if (value.HasValue) {
+                    IsDitherOptimizerEnabled = value.Value;
+                    Logger.Info($"Dither Optimizer setting loaded from file: {IsDitherOptimizerEnabled}");
+                    return;
                 }
                 IsDitherOptimizerEnabled = false;
                 Logger.Info("Dither Optimizer setting file not found, using default: OFF");
@@ -691,11 +650,7 @@ namespace DitherStatistics.Plugin {
 
         private void SaveDitherOptimizerSetting() {
             try {
-                var directory = System.IO.Path.GetDirectoryName(OptimizerSettingsFilePath);
-                if (!System.IO.Directory.Exists(directory)) {
-                    System.IO.Directory.CreateDirectory(directory);
-                }
-                System.IO.File.WriteAllText(OptimizerSettingsFilePath, IsDitherOptimizerEnabled.ToString());
+                settingsStore.WriteBool(PluginSettingsStore.OptimizerFileName, IsDitherOptimizerEnabled);
                 Logger.Info($"Dither Optimizer setting saved to file: {IsDitherOptimizerEnabled}");
             } catch (Exception ex) {
                 Logger.Error($"Error saving Dither Optimizer setting: {ex.Message}");
@@ -734,7 +689,7 @@ namespace DitherStatistics.Plugin {
                     // Snapshot the current state immediately so a restart right after enabling restores it
                     SaveStatisticsData();
                     // Flush the inactive profiles too so ALL profiles land on disk
-                    foreach (var entry in profileStore) {
+                    foreach (var entry in profileDataService.GetInMemoryProfiles()) {
                         SaveProfileDataToFile(entry.Key, entry.Value);
                     }
                 } else {
@@ -744,32 +699,16 @@ namespace DitherStatistics.Plugin {
             }
         }
 
-        private readonly object persistenceLock = new object();
-
-        // Settings file path for persistence toggle
-        private static readonly string PersistenceSettingsFilePath = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NINA", "DitherStatistics", "persistence_settings.txt"
-        );
-
-        // Data file holding the persisted statistics snapshot
-        private static readonly string StatisticsDataFilePath = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NINA", "DitherStatistics", "statistics_data.json"
-        );
-
         private void LoadStatisticsPersistenceSetting() {
             try {
-                if (System.IO.File.Exists(PersistenceSettingsFilePath)) {
-                    var content = System.IO.File.ReadAllText(PersistenceSettingsFilePath).Trim();
-                    if (bool.TryParse(content, out bool value)) {
-                        // Set the backing field directly - going through the setter would
-                        // overwrite the data file with the still-empty statistics before restore
-                        isStatisticsPersistenceEnabled = value;
-                        RaisePropertyChanged(nameof(IsStatisticsPersistenceEnabled));
-                        Logger.Info($"Statistics Persistence setting loaded from file: {isStatisticsPersistenceEnabled}");
-                        return;
-                    }
+                var value = settingsStore.ReadBool(PluginSettingsStore.PersistenceFileName);
+                if (value.HasValue) {
+                    // Set the backing field directly - going through the setter would
+                    // overwrite the data file with the still-empty statistics before restore
+                    isStatisticsPersistenceEnabled = value.Value;
+                    RaisePropertyChanged(nameof(IsStatisticsPersistenceEnabled));
+                    Logger.Info($"Statistics Persistence setting loaded from file: {isStatisticsPersistenceEnabled}");
+                    return;
                 }
                 isStatisticsPersistenceEnabled = false;
                 Logger.Info("Statistics Persistence setting file not found, using default: OFF");
@@ -781,11 +720,7 @@ namespace DitherStatistics.Plugin {
 
         private void SaveStatisticsPersistenceSetting() {
             try {
-                var directory = System.IO.Path.GetDirectoryName(PersistenceSettingsFilePath);
-                if (!System.IO.Directory.Exists(directory)) {
-                    System.IO.Directory.CreateDirectory(directory);
-                }
-                System.IO.File.WriteAllText(PersistenceSettingsFilePath, isStatisticsPersistenceEnabled.ToString());
+                settingsStore.WriteBool(PluginSettingsStore.PersistenceFileName, isStatisticsPersistenceEnabled);
                 Logger.Info($"Statistics Persistence setting saved to file: {isStatisticsPersistenceEnabled}");
             } catch (Exception ex) {
                 Logger.Error($"Error saving Statistics Persistence setting: {ex.Message}");
@@ -811,14 +746,12 @@ namespace DitherStatistics.Plugin {
         private void RestoreStatisticsData() {
             if (!isStatisticsPersistenceEnabled) return;
             try {
-                var dataFilePath = GetProfileDataFilePath(selectedProfileName);
-                if (!System.IO.File.Exists(dataFilePath)) {
+                if (!profileDataService.ProfileDataFileExists(selectedProfileName)) {
                     Logger.Info("Statistics persistence enabled but no data file found - starting with empty statistics");
                     return;
                 }
 
-                var json = System.IO.File.ReadAllText(dataFilePath);
-                var data = System.Text.Json.JsonSerializer.Deserialize<PersistedStatisticsData>(json);
+                var data = profileDataService.LoadProfileDataFromFile(selectedProfileName);
                 if (data == null) return;
 
                 foreach (var evt in data.DitherEvents ?? new List<DitherEvent>()) {
@@ -853,26 +786,11 @@ namespace DitherStatistics.Plugin {
 
         private void DeleteStatisticsData() {
             try {
-                lock (persistenceLock) {
-                    // Legacy single data file (pre-1.5)
-                    if (System.IO.File.Exists(StatisticsDataFilePath)) {
-                        System.IO.File.Delete(StatisticsDataFilePath);
-                    }
-                    DeleteAllProfileDataFiles();
-                }
+                // Includes the legacy single data file (pre-1.5)
+                profileDataService.DeleteAllStatisticsDataFiles();
                 Logger.Info("Persisted statistics data deleted (all profiles)");
             } catch (Exception ex) {
                 Logger.Error($"Error deleting statistics data: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Delete every per-profile data file. Caller must hold persistenceLock.
-        /// </summary>
-        private static void DeleteAllProfileDataFiles() {
-            if (!System.IO.Directory.Exists(ProfilesDirectory)) return;
-            foreach (var file in System.IO.Directory.GetFiles(ProfilesDirectory, "*.json")) {
-                System.IO.File.Delete(file);
             }
         }
 
@@ -880,31 +798,7 @@ namespace DitherStatistics.Plugin {
 
         #region Properties - Statistics Profiles
 
-        public const string DefaultProfileName = "Default";
-
-        // Per-profile data files live here, one <name>.json per profile
-        private static readonly string ProfilesDirectory = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NINA", "DitherStatistics", "profiles"
-        );
-
-        // Settings file path for the multi-profile toggle
-        private static readonly string MultiProfileSettingsFilePath = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NINA", "DitherStatistics", "multiprofile_settings.txt"
-        );
-
-        // Profile names + selection (line 1 = selected, remaining lines = all names).
-        // Names are settings and survive restarts even when data persistence is off.
-        private static readonly string ProfileListFilePath = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NINA", "DitherStatistics", "profiles_list.txt"
-        );
-
-        // Inactive profiles keep their data here for the duration of the session,
-        // so switching away and back never loses data even with persistence off
-        private readonly Dictionary<string, PersistedStatisticsData> profileStore =
-            new Dictionary<string, PersistedStatisticsData>(StringComparer.OrdinalIgnoreCase);
+        public const string DefaultProfileName = StatisticsProfileService.DefaultProfileName;
 
         public ObservableCollection<string> ProfileNames { get; } =
             new ObservableCollection<string> { DefaultProfileName };
@@ -952,33 +846,15 @@ namespace DitherStatistics.Plugin {
             }
         }
 
-        private static string SanitizeProfileName(string name) {
-            if (name == null) return null;
-            var result = name.Trim();
-            foreach (var c in System.IO.Path.GetInvalidFileNameChars()) {
-                result = result.Replace(c, '_');
-            }
-            if (result.Length > 50) {
-                result = result.Substring(0, 50);
-            }
-            return result.Length == 0 ? null : result;
-        }
-
-        private static string GetProfileDataFilePath(string profileName) {
-            return System.IO.Path.Combine(ProfilesDirectory, SanitizeProfileName(profileName) + ".json");
-        }
-
         private void LoadMultiProfileSetting() {
             try {
-                if (System.IO.File.Exists(MultiProfileSettingsFilePath)) {
-                    var content = System.IO.File.ReadAllText(MultiProfileSettingsFilePath).Trim();
-                    if (bool.TryParse(content, out bool value)) {
-                        // Set the backing field directly - the setter would trigger a profile switch
-                        isMultiProfileEnabled = value;
-                        RaisePropertyChanged(nameof(IsMultiProfileEnabled));
-                        Logger.Info($"Multi-profile setting loaded from file: {isMultiProfileEnabled}");
-                        return;
-                    }
+                var value = settingsStore.ReadBool(PluginSettingsStore.MultiProfileFileName);
+                if (value.HasValue) {
+                    // Set the backing field directly - the setter would trigger a profile switch
+                    isMultiProfileEnabled = value.Value;
+                    RaisePropertyChanged(nameof(IsMultiProfileEnabled));
+                    Logger.Info($"Multi-profile setting loaded from file: {isMultiProfileEnabled}");
+                    return;
                 }
                 isMultiProfileEnabled = false;
                 Logger.Info("Multi-profile setting file not found, using default: OFF");
@@ -990,11 +866,7 @@ namespace DitherStatistics.Plugin {
 
         private void SaveMultiProfileSetting() {
             try {
-                var directory = System.IO.Path.GetDirectoryName(MultiProfileSettingsFilePath);
-                if (!System.IO.Directory.Exists(directory)) {
-                    System.IO.Directory.CreateDirectory(directory);
-                }
-                System.IO.File.WriteAllText(MultiProfileSettingsFilePath, isMultiProfileEnabled.ToString());
+                settingsStore.WriteBool(PluginSettingsStore.MultiProfileFileName, isMultiProfileEnabled);
                 Logger.Info($"Multi-profile setting saved to file: {isMultiProfileEnabled}");
             } catch (Exception ex) {
                 Logger.Error($"Error saving multi-profile setting: {ex.Message}");
@@ -1003,25 +875,11 @@ namespace DitherStatistics.Plugin {
 
         private void LoadProfileListSetting() {
             try {
-                var names = new List<string>();
-                string selected = DefaultProfileName;
-
-                if (System.IO.File.Exists(ProfileListFilePath)) {
-                    var lines = System.IO.File.ReadAllLines(ProfileListFilePath)
-                        .Select(l => l.Trim())
-                        .Where(l => l.Length > 0)
-                        .ToList();
-                    if (lines.Count > 0) {
-                        selected = lines[0];
-                        names.AddRange(lines.Skip(1));
-                    }
-                }
+                var (selected, names) = settingsStore.ReadProfileList(DefaultProfileName);
 
                 // Self-heal from existing profile data files when persistence is on
-                if (isStatisticsPersistenceEnabled && System.IO.Directory.Exists(ProfilesDirectory)) {
-                    foreach (var file in System.IO.Directory.GetFiles(ProfilesDirectory, "*.json")) {
-                        names.Add(System.IO.Path.GetFileNameWithoutExtension(file));
-                    }
+                if (isStatisticsPersistenceEnabled) {
+                    names.AddRange(profileDataService.GetProfileNamesFromDataFiles());
                 }
 
                 ProfileNames.Clear();
@@ -1048,13 +906,7 @@ namespace DitherStatistics.Plugin {
 
         private void SaveProfileListSetting() {
             try {
-                var directory = System.IO.Path.GetDirectoryName(ProfileListFilePath);
-                if (!System.IO.Directory.Exists(directory)) {
-                    System.IO.Directory.CreateDirectory(directory);
-                }
-                var lines = new List<string> { selectedProfileName };
-                lines.AddRange(ProfileNames);
-                System.IO.File.WriteAllLines(ProfileListFilePath, lines);
+                settingsStore.WriteProfileList(selectedProfileName, ProfileNames);
             } catch (Exception ex) {
                 Logger.Error($"Error saving profile list: {ex.Message}");
             }
@@ -1065,19 +917,13 @@ namespace DitherStatistics.Plugin {
         /// </summary>
         private void MigrateLegacyStatisticsFile() {
             try {
-                lock (persistenceLock) {
-                    if (!System.IO.File.Exists(StatisticsDataFilePath)) return;
-                    if (!System.IO.Directory.Exists(ProfilesDirectory)) {
-                        System.IO.Directory.CreateDirectory(ProfilesDirectory);
-                    }
-                    var target = GetProfileDataFilePath(DefaultProfileName);
-                    if (!System.IO.File.Exists(target)) {
-                        System.IO.File.Move(StatisticsDataFilePath, target);
+                switch (profileDataService.MigrateLegacyStatisticsFile()) {
+                    case StatisticsProfileService.LegacyMigrationResult.Migrated:
                         Logger.Info("Migrated legacy statistics_data.json to profiles\\Default.json");
-                    } else {
-                        System.IO.File.Delete(StatisticsDataFilePath);
+                        break;
+                    case StatisticsProfileService.LegacyMigrationResult.LegacyDeleted:
                         Logger.Info("Deleted legacy statistics_data.json (Default profile file already exists)");
-                    }
+                        break;
                 }
             } catch (Exception ex) {
                 Logger.Error($"Error migrating legacy statistics data file: {ex.Message}");
@@ -1104,7 +950,7 @@ namespace DitherStatistics.Plugin {
         /// </summary>
         private void SwitchToProfile(string newName) {
             var snapshot = BuildCurrentSnapshot();
-            profileStore[selectedProfileName] = snapshot;
+            profileDataService.StoreInMemory(selectedProfileName, snapshot);
             if (isStatisticsPersistenceEnabled) {
                 SaveProfileDataToFile(selectedProfileName, snapshot);
             }
@@ -1114,17 +960,11 @@ namespace DitherStatistics.Plugin {
                 phd2Client.CurrentProfileName = newName;
             }
 
-            if (!profileStore.TryGetValue(newName, out var data)) {
+            if (!profileDataService.TryGetFromMemory(newName, out var data)) {
                 data = null;
                 if (isStatisticsPersistenceEnabled) {
                     try {
-                        var path = GetProfileDataFilePath(newName);
-                        if (System.IO.File.Exists(path)) {
-                            lock (persistenceLock) {
-                                var json = System.IO.File.ReadAllText(path);
-                                data = System.Text.Json.JsonSerializer.Deserialize<PersistedStatisticsData>(json);
-                            }
-                        }
+                        data = profileDataService.LoadProfileDataFromFile(newName);
                     } catch (Exception ex) {
                         Logger.Error($"Error loading profile '{newName}' from file: {ex.Message}");
                         data = null;
@@ -1160,20 +1000,14 @@ namespace DitherStatistics.Plugin {
 
         private void SaveProfileDataToFile(string profileName, PersistedStatisticsData data) {
             try {
-                lock (persistenceLock) {
-                    if (!System.IO.Directory.Exists(ProfilesDirectory)) {
-                        System.IO.Directory.CreateDirectory(ProfilesDirectory);
-                    }
-                    var json = System.Text.Json.JsonSerializer.Serialize(data);
-                    System.IO.File.WriteAllText(GetProfileDataFilePath(profileName), json);
-                }
+                profileDataService.SaveProfileDataToFile(profileName, data);
             } catch (Exception ex) {
                 Logger.Error($"Error saving profile '{profileName}' data: {ex.Message}");
             }
         }
 
         private void CreateProfile() {
-            var name = SanitizeProfileName(ProfileNameInput);
+            var name = StatisticsProfileService.SanitizeProfileName(ProfileNameInput);
             if (name == null) {
                 Logger.Warning("Cannot create profile: name is empty or invalid");
                 return;
@@ -1181,7 +1015,7 @@ namespace DitherStatistics.Plugin {
 
             // Compare sanitized names so two different names cannot collide on the same file
             var existing = ProfileNames.FirstOrDefault(n =>
-                string.Equals(SanitizeProfileName(n), name, StringComparison.OrdinalIgnoreCase));
+                string.Equals(StatisticsProfileService.SanitizeProfileName(n), name, StringComparison.OrdinalIgnoreCase));
             if (existing != null) {
                 SelectedProfileName = existing;
                 return;
@@ -1200,15 +1034,10 @@ namespace DitherStatistics.Plugin {
 
             var victim = selectedProfileName;
             SelectedProfileName = DefaultProfileName;
-            profileStore.Remove(victim);
+            profileDataService.RemoveFromMemory(victim);
             ProfileNames.Remove(victim);
             try {
-                lock (persistenceLock) {
-                    var path = GetProfileDataFilePath(victim);
-                    if (System.IO.File.Exists(path)) {
-                        System.IO.File.Delete(path);
-                    }
-                }
+                profileDataService.DeleteProfileDataFile(victim);
             } catch (Exception ex) {
                 Logger.Error($"Error deleting data file of profile '{victim}': {ex.Message}");
             }
@@ -1339,11 +1168,9 @@ namespace DitherStatistics.Plugin {
 
             // Clear ALL profiles, not only the active one (memory + files);
             // the profile names and the selection are kept
-            profileStore.Clear();
+            profileDataService.ClearMemory();
             try {
-                lock (persistenceLock) {
-                    DeleteAllProfileDataFiles();
-                }
+                profileDataService.DeleteAllProfileDataFiles();
             } catch (Exception ex) {
                 Logger.Error($"Error deleting profile data files: {ex.Message}");
             }
@@ -2057,7 +1884,7 @@ namespace DitherStatistics.Plugin {
                 // Defensive: flush the inactive profiles too (normally already
                 // written at switch time)
                 if (isStatisticsPersistenceEnabled) {
-                    foreach (var entry in profileStore) {
+                    foreach (var entry in profileDataService.GetInMemoryProfiles()) {
                         SaveProfileDataToFile(entry.Key, entry.Value);
                     }
                 }
