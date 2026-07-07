@@ -43,12 +43,15 @@ namespace DitherStatistics.Plugin {
         private bool isDithering = false;
 
         // Guiding session tracking (guarded by sessionLock: written on the read thread,
-        // read from analysis tasks on timer/thread-pool threads)
+        // read from analysis tasks on timer/thread-pool threads). "Session" here means the
+        // whole guiding session since the last GuidingStarted/Disconnected reset (unlike the
+        // 15-minute reference window) - Welford's online algorithm keeps that unbounded-count
+        // semantics without retaining every point (≈43000 points per 24h at 2s exposures).
         private readonly object sessionLock = new object();
         private DateTime sessionStartTime;
-        private readonly List<double> sessionDX = new List<double>();  // RA values (dx)
-        private readonly List<double> sessionDY = new List<double>();  // DEC values (dy)
-        private readonly List<double> sessionRMS = new List<double>(); // point distances for stddev calculation
+        private readonly WelfordAccumulator sessionDX = new WelfordAccumulator();  // RA values (dx)
+        private readonly WelfordAccumulator sessionDY = new WelfordAccumulator();  // DEC values (dy)
+        private readonly WelfordAccumulator sessionRMS = new WelfordAccumulator(); // point distances for stddev calculation
 
         // Rolling window of stable-guiding distances (guarded by referenceLock)
         private readonly object referenceLock = new object();
@@ -80,6 +83,15 @@ namespace DitherStatistics.Plugin {
                 "NINA",
                 "DitherStatistics"
             );
+
+            // Covers the case where PHD2 is already guiding when the plugin connects
+            // (no GuidingStarted event ever arrives): without this, diagnostic files
+            // would be named "00010101_000000_..." and every such session would
+            // overwrite the same file.
+            sessionStartTime = DateTime.Now;
+
+            // Prune old diagnostic files to keep storage bounded
+            PruneDiagnosticFiles();
         }
 
         /// <summary>
@@ -162,9 +174,9 @@ namespace DitherStatistics.Plugin {
             try {
                 lock (sessionLock) {
                     sessionStartTime = DateTime.Now;
-                    sessionDX.Clear();
-                    sessionDY.Clear();
-                    sessionRMS.Clear();
+                    sessionDX.Reset();
+                    sessionDY.Reset();
+                    sessionRMS.Reset();
                 }
 
                 Logger.Info($"DitherOptimizer: New guiding session started");
@@ -183,9 +195,9 @@ namespace DitherStatistics.Plugin {
             isDithering = false;
 
             lock (sessionLock) {
-                sessionDX.Clear();
-                sessionDY.Clear();
-                sessionRMS.Clear();
+                sessionDX.Reset();
+                sessionDY.Reset();
+                sessionRMS.Reset();
             }
             lock (referenceLock) {
                 referenceWindow.Clear();
@@ -206,34 +218,53 @@ namespace DitherStatistics.Plugin {
 
         /// <summary>
         /// Running session RMS using PHD2's method (sqrt(ra_stddev² + dec_stddev²))
-        /// and the standard deviation of the point distances. Caller must hold sessionLock.
+        /// and the standard deviation of the point distances, both over every guide step
+        /// since the last session reset (GuidingStarted/Disconnected) - not the 15-minute
+        /// reference window. Caller must hold sessionLock.
         /// </summary>
         private (double runningRMS, double rmsStdDev) ComputeSessionStatsLocked() {
             double runningRMS = 0;
             double rmsStdDev = 0;
 
             if (sessionDX.Count > 1) {
-                // RA standard deviation: sqrt(Σ(dx_i - mean_dx)² / (n-1))
-                double meanDX = sessionDX.Average();
-                double sumSquaredDeviationsDX = sessionDX.Sum(d => Math.Pow(d - meanDX, 2));
-                double raStdDev = Math.Sqrt(sumSquaredDeviationsDX / (sessionDX.Count - 1));
-
-                // DEC standard deviation: sqrt(Σ(dy_i - mean_dy)² / (n-1))
-                double meanDY = sessionDY.Average();
-                double sumSquaredDeviationsDY = sessionDY.Sum(d => Math.Pow(d - meanDY, 2));
-                double decStdDev = Math.Sqrt(sumSquaredDeviationsDY / (sessionDY.Count - 1));
-
                 // Total RMS: sqrt(ra_stddev² + dec_stddev²)
+                double raStdDev = sessionDX.SampleStdDev;
+                double decStdDev = sessionDY.SampleStdDev;
                 runningRMS = Math.Sqrt(raStdDev * raStdDev + decStdDev * decStdDev);
             }
 
             if (sessionRMS.Count > 1) {
-                double meanRMS = sessionRMS.Average();
-                double sumSquaredDeviationsRMS = sessionRMS.Sum(r => Math.Pow(r - meanRMS, 2));
-                rmsStdDev = Math.Sqrt(sumSquaredDeviationsRMS / (sessionRMS.Count - 1));
+                rmsStdDev = sessionRMS.SampleStdDev;
             }
 
             return (runningRMS, rmsStdDev);
+        }
+
+        /// <summary>
+        /// Welford's online algorithm for mean/sample-variance in O(1) memory and per-update
+        /// time, used for the session statistics above so an all-day session (≈43000 guide
+        /// steps at 2s exposures) doesn't retain every point just to compute a standard
+        /// deviation. Mathematically equivalent to the direct Σ(x-mean)² formula.
+        /// </summary>
+        private sealed class WelfordAccumulator {
+            public int Count { get; private set; }
+            private double mean;
+            private double sumSquaredDeviations; // M2
+
+            public void Add(double value) {
+                Count++;
+                double delta = value - mean;
+                mean += delta / Count;
+                sumSquaredDeviations += delta * (value - mean);
+            }
+
+            public double SampleStdDev => Count > 1 ? Math.Sqrt(sumSquaredDeviations / (Count - 1)) : 0;
+
+            public void Reset() {
+                Count = 0;
+                mean = 0;
+                sumSquaredDeviations = 0;
+            }
         }
 
         /// <summary>
@@ -469,8 +500,10 @@ namespace DitherStatistics.Plugin {
                 // Write file (overwrite)
                 using (StreamWriter writer = new StreamWriter(filePath, append: false)) {
                     // Write header with RMS values for verification
-                    writer.WriteLine($"# Running_RMS: {runningRMS:F4}");
-                    writer.WriteLine($"# RMS_StdDev: {rmsStdDev:F4}");
+                    writer.WriteLine("# Running_RMS/RMS_StdDev cover every guide step since the last session reset");
+                    writer.WriteLine("# (GuidingStarted/Disconnected), not just the 15-minute reference window below.");
+                    writer.WriteLine($"# Running_RMS: {runningRMS:F4} (sqrt(RA_stddev² + DEC_stddev²), PHD2's method)");
+                    writer.WriteLine($"# RMS_StdDev: {rmsStdDev:F4} (stddev of the per-step pair distances)");
 
                     for (int p = 0; p < DitherAnalysis.PROFILE_COUNT; p++) {
                         writer.WriteLine($"# Threshold_{DitherAnalysis.PROFILE_LABELS[p]}: {thresholds[p]:F4} ({DitherAnalysis.PROFILE_QUANTILES[p]:P0} quantile of the stable-guiding reference window)");
@@ -560,6 +593,42 @@ namespace DitherStatistics.Plugin {
 
             } catch (Exception ex) {
                 Logger.Error($"DitherOptimizer: Error writing settle analysis file: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Prune old diagnostic files: keep only the newest ~30 dither_analysis and
+        /// settle_analysis files, delete the rest to prevent unbounded storage growth.
+        /// </summary>
+        private void PruneDiagnosticFiles() {
+            try {
+                if (!Directory.Exists(diagnosticsDirectory)) return;
+
+                var ditherFiles = Directory.GetFiles(diagnosticsDirectory, "*_dither_analysis.txt")
+                    .OrderByDescending(f => new FileInfo(f).LastWriteTimeUtc)
+                    .ToList();
+
+                if (ditherFiles.Count > 30) {
+                    foreach (var file in ditherFiles.Skip(30)) {
+                        File.Delete(file);
+                    }
+                }
+
+                var settleFiles = Directory.GetFiles(diagnosticsDirectory, "*_settle_analysis.txt")
+                    .OrderByDescending(f => new FileInfo(f).LastWriteTimeUtc)
+                    .ToList();
+
+                if (settleFiles.Count > 30) {
+                    foreach (var file in settleFiles.Skip(30)) {
+                        File.Delete(file);
+                    }
+                }
+
+                if (ditherFiles.Count > 30 || settleFiles.Count > 30) {
+                    Logger.Info($"DitherOptimizer: Pruned diagnostic files (kept 30 newest dither_analysis, kept 30 newest settle_analysis)");
+                }
+            } catch (Exception ex) {
+                Logger.Error($"DitherOptimizer: Error pruning diagnostic files: {ex.Message}");
             }
         }
 

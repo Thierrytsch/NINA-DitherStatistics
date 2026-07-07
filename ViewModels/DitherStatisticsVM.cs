@@ -109,7 +109,7 @@ namespace DitherStatistics.Plugin {
             // Only an explicit disconnect (Dispose) aborts the running collection
             // window; a mere connection loss deliberately does not clean up
             phd2Client.ConnectionStatusChanged += (s, status) => {
-                if (status == "Disconnected") optimizerService.HandleDisconnected();
+                if (status == Phd2ConnectionStatus.Disconnected) optimizerService.HandleDisconnected();
             };
 
             phd2Client.GuidingDithered += OnPHD2GuidingDithered;
@@ -719,10 +719,47 @@ namespace DitherStatistics.Plugin {
         /// Called after every completed dither, on Clear Data and on shutdown,
         /// so the data file always mirrors the current view.
         /// </summary>
+        /// <remarks>
+        /// This is invoked both from UI-thread callers (Clear Data, persistence toggle,
+        /// Dispose) and from background threads (the PHD2 read loop via OnPHD2SettleDone,
+        /// the optimizer analysis thread via OnDitherRecommendationUpdated). Because
+        /// BuildCurrentSnapshot reads the UI-thread-only live collections and
+        /// selectedProfileName, the snapshot is built on the UI thread to avoid a torn
+        /// read (InvalidOperationException during enumeration) or a snapshot landing in
+        /// the wrong profile's file during a concurrent SwitchToProfile. The file write
+        /// itself stays on the calling thread.
+        /// </remarks>
         private void SaveStatisticsData() {
             if (!isStatisticsPersistenceEnabled) return;
-            SaveProfileDataToFile(selectedProfileName, BuildCurrentSnapshot());
-            Logger.Debug($"Statistics data persisted ({ditherEvents.Count} dither events, profile '{selectedProfileName}')");
+
+            string profileName = null;
+            PersistedStatisticsData snapshot = null;
+            int eventCount = 0;
+            InvokeOnUiThread(() => {
+                profileName = selectedProfileName;
+                snapshot = BuildCurrentSnapshot();
+                eventCount = ditherEvents.Count;
+            });
+            if (snapshot == null) return;
+
+            SaveProfileDataToFile(profileName, snapshot);
+            Logger.Debug($"Statistics data persisted ({eventCount} dither events, profile '{profileName}')");
+        }
+
+        /// <summary>
+        /// Run <paramref name="action"/> synchronously on the WPF UI thread. Runs inline
+        /// when already on the UI thread (Dispatcher.Invoke detects same-thread access, so
+        /// there is no deadlock and no re-entrancy) and also when there is no WPF
+        /// Application (unit tests). This is how background threads safely touch the
+        /// UI-thread-only live statistics collections (see BuildCurrentSnapshot).
+        /// </summary>
+        private static void InvokeOnUiThread(Action action) {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.CheckAccess()) {
+                action();
+            } else {
+                dispatcher.Invoke(action);
+            }
         }
 
         /// <summary>
@@ -917,6 +954,14 @@ namespace DitherStatistics.Plugin {
             }
         }
 
+        /// <summary>
+        /// Build a persistence snapshot of the current statistics state.
+        /// UI-thread only: it enumerates the live collections (ditherEvents,
+        /// settleTimeValues, pixelShiftValues) and reads selectedProfileName /
+        /// Recommendation, all of which are mutated on the UI thread (SwitchToProfile,
+        /// ClearData, RestoreStatisticsData, OnPHD2SettleDone's dispatcher block).
+        /// Background callers must marshal through InvokeOnUiThread (see SaveStatisticsData).
+        /// </summary>
         private PersistedStatisticsData BuildCurrentSnapshot() {
             return new PersistedStatisticsData {
                 DitherEvents = ditherEvents.ToList(),
@@ -1538,9 +1583,12 @@ namespace DitherStatistics.Plugin {
                 themeWatcher.PrimaryColorChanged -= OnThemeColorChanged;
                 themeWatcher.Dispose();
 
-                // Dispose order matters: the client's Disconnect fires "Disconnected",
+                // Dispose order matters: the connection manager must stop first so
+                // the client's final Disconnected status cannot schedule a reconnect
+                // after disposal; the client's Disconnect then fires Disconnected,
                 // which lets the optimizer abort its running collection window (the
                 // snapshot above already captured the in-progress points)
+                phd2ConnectionManager?.Dispose();
                 phd2Client?.Dispose();
                 optimizerService?.Dispose();
 

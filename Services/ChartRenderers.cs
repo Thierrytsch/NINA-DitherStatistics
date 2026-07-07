@@ -47,20 +47,20 @@ namespace DitherStatistics.Plugin {
                 connectionLine.Label = "Connections";
             }
 
-            // Add gradient-colored scatter points
+            // Add gradient-colored scatter points, batched into a single BubblePlot
+            // (one plottable holding all points) instead of one AddScatter plottable
+            // per point - with persistence enabled a session can have hundreds of
+            // dithers, and re-adding hundreds of plottables on every render was the
+            // bottleneck. BubblePlot's radius is in pixels (diameter/2) to match the
+            // previous MarkerSize=6 filled-circle markers; edge color equals fill
+            // color so no outline is visible.
+            var gradientPoints = plot.Plot.AddBubblePlot();
             for (int i = 0; i < pixelShiftValues.Count; i++) {
                 double ratio = pixelShiftValues.Count > 1 ? (double)i / (pixelShiftValues.Count - 1) : 1.0;
                 byte red = (byte)(60 + (200 - 60) * ratio);
                 var pointColor = System.Drawing.Color.FromArgb(255, red, 0, 0);
 
-                var scatter = plot.Plot.AddScatter(
-                    new double[] { xData[i] },
-                    new double[] { yData[i] }
-                );
-                scatter.Color = pointColor;
-                scatter.MarkerSize = 6;
-                scatter.MarkerShape = MarkerShape.filledCircle;
-                scatter.LineWidth = 0;
+                gradientPoints.Add(xData[i], yData[i], radius: 3, fillColor: pointColor, edgeWidth: 0, edgeColor: pointColor);
             }
 
             // Highlight last point in lime green

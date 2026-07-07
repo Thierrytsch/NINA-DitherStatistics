@@ -72,7 +72,11 @@ panel), at the end `nina_final_top.png` (charts) and `nina_final_bottom.png`
 recommendations, actions — the wheel is deliberately sent over a text area,
 since over the charts it would zoom instead of scroll). The script enables
 the plugin's statistics persistence for the run and restores the original
-setting afterward.
+setting afterward. It also backs up `profiles\*.json` and `profiles_list.txt`
+before the run and restores them in the teardown, so the simulator dithers
+this run generates never permanently pollute the user's real statistics
+profile — the run's own copy of the active profile JSON still ends up in
+the artifacts folder (see assertions below).
 
 ## What deliberately stays manual
 

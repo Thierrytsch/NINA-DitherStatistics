@@ -58,12 +58,12 @@ namespace DitherStatistics.Tests {
             server.PixelScaleArcsec = 3.25;
 
             using var client = new PHD2Client("127.0.0.1", server.Port);
-            var statuses = new ConcurrentQueue<string>();
+            var statuses = new ConcurrentQueue<Phd2ConnectionStatus>();
             client.ConnectionStatusChanged += (s, status) => statuses.Enqueue(status);
 
             Assert.True(await client.ConnectAsync());
             Assert.True(client.IsConnected);
-            Assert.Contains("Connected", statuses);
+            Assert.Contains(Phd2ConnectionStatus.Connected, statuses);
 
             // The client queries 1 s after connect; both answers must land in the properties
             await WaitUntil(() => client.CurrentGuideExposure > 0 && client.GuiderPixelScaleArcsec.HasValue,
@@ -171,16 +171,36 @@ namespace DitherStatistics.Tests {
         }
 
         [Fact]
+        public async Task EmptyKeepAliveLine_DoesNotTearDownTheConnection() {
+            using var server = new FakePhd2Server();
+            using var client = await ConnectAndWaitReady(server);
+
+            var statuses = new ConcurrentQueue<Phd2ConnectionStatus>();
+            client.ConnectionStatusChanged += (s, status) => statuses.Enqueue(status);
+            var guideSteps = new ConcurrentQueue<PHD2GuideStepEventArgs>();
+            client.GuideStep += (s, e) => guideSteps.Enqueue(e);
+
+            // A blank line must be skipped, not treated as end-of-stream
+            server.SendRaw("");
+            server.SendRaw("");
+            server.SendGuideStep(0.4, 0.1);
+
+            await WaitUntil(() => guideSteps.Count >= 1, "guide step after empty keep-alive lines");
+            Assert.True(client.IsConnected);
+            Assert.DoesNotContain(Phd2ConnectionStatus.ConnectionLost, statuses);
+        }
+
+        [Fact]
         public async Task ServerClosesConnection_RaisesConnectionLost() {
             using var server = new FakePhd2Server();
             using var client = await ConnectAndWaitReady(server);
 
-            var statuses = new ConcurrentQueue<string>();
+            var statuses = new ConcurrentQueue<Phd2ConnectionStatus>();
             client.ConnectionStatusChanged += (s, status) => statuses.Enqueue(status);
 
             server.DropConnection();
 
-            await WaitUntil(() => statuses.Contains("Connection lost"), "'Connection lost' status");
+            await WaitUntil(() => statuses.Contains(Phd2ConnectionStatus.ConnectionLost), "ConnectionLost status");
             Assert.False(client.IsConnected);
         }
 
@@ -189,15 +209,15 @@ namespace DitherStatistics.Tests {
             using var server = new FakePhd2Server();
             using var client = await ConnectAndWaitReady(server);
 
-            // Same wiring as the VM: only the explicit "Disconnected" status aborts
+            // Same wiring as the VM: only the explicit Disconnected status aborts
             // the optimizer's running collection window
             using var optimizer = new DitherOptimizerService(() => client.CurrentGuideExposure, () => client.GuiderPixelScaleArcsec, tempDir);
             client.GuidingDithered += (s, e) => optimizer.HandleGuidingDithered(e);
             client.GuideStep += (s, e) => optimizer.HandleGuideStep(e);
-            var statuses = new ConcurrentQueue<string>();
+            var statuses = new ConcurrentQueue<Phd2ConnectionStatus>();
             client.ConnectionStatusChanged += (s, status) => {
                 statuses.Enqueue(status);
-                if (status == "Disconnected") optimizer.HandleDisconnected();
+                if (status == Phd2ConnectionStatus.Disconnected) optimizer.HandleDisconnected();
             };
 
             // Open a collection window with some points, then disconnect mid-window
@@ -213,7 +233,7 @@ namespace DitherStatistics.Tests {
 
             client.Disconnect();
 
-            Assert.Contains("Disconnected", statuses);
+            Assert.Contains(Phd2ConnectionStatus.Disconnected, statuses);
             Assert.False(client.IsConnected);
 
             // The aborted window's points were discarded, no series metadata kept

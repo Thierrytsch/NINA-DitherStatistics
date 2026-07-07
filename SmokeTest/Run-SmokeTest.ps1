@@ -52,7 +52,9 @@ $pluginDeployDir = Join-Path $env:LOCALAPPDATA 'NINA\Plugins\3.0.0\DitherStatist
 $ninaLogDir = Join-Path $env:LOCALAPPDATA 'NINA\Logs'
 $persistenceFile = Join-Path $pluginDataDir 'persistence_settings.txt'
 $profileListFile = Join-Path $pluginDataDir 'profiles_list.txt'
+$profilesDir = Join-Path $pluginDataDir 'profiles'
 $artifactDir = Join-Path $PSScriptRoot ("artifacts\" + (Get-Date -Format 'yyyyMMdd_HHmmss'))
+$profilesBackupDir = Join-Path $artifactDir 'profiles_backup'
 New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
 
 $failures = New-Object System.Collections.Generic.List[string]
@@ -212,6 +214,10 @@ $phd2 = $null
 $persistenceBackup = $null
 $persistenceExisted = $false
 $persistenceModified = $false
+$profilesBackedUp = $false
+$profilesDirExisted = $false
+$profileListBackup = $null
+$profileListExisted = $false
 
 try {
     # ---- 1. Close NINA, build + deploy the plugin -------------------------------
@@ -234,8 +240,21 @@ try {
     & "$PSScriptRoot\Start-Phd2Guiding.ps1" -Phd2Path $Phd2Path -ProfileName $Phd2ProfileName `
         -SettlePixels $SettlePixels -SettleTime $SettleTime -SettleTimeout $SettleTimeout
 
-    # ---- 3. Enable persistence, start NINA, wait for the plugin to connect ------
-    # (original setting is restored in the teardown)
+    # ---- 3. Back up the user's statistics profiles, enable persistence ----------
+    # (both are restored in the teardown - the simulator dithers this run
+    # triggers must not permanently pollute the user's real profile data)
+    if (Test-Path $profilesDir) {
+        $profilesDirExisted = $true
+        New-Item -ItemType Directory -Path $profilesBackupDir -Force | Out-Null
+        Copy-Item (Join-Path $profilesDir '*.json') $profilesBackupDir -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $profileListFile) {
+        $profileListExisted = $true
+        $profileListBackup = Get-Content $profileListFile -Raw
+    }
+    $profilesBackedUp = $true
+    Log 'Backed up statistics profiles for restoration after the run.'
+
     if (Test-Path $persistenceFile) {
         $persistenceExisted = $true
         $persistenceBackup = Get-Content $persistenceFile -Raw
@@ -393,6 +412,26 @@ try {
             }
         }
     } catch { Log "WARNING: could not restore persistence setting: $($_.Exception.Message)" }
+
+    # Restore the user's statistics profiles - discards this run's simulator
+    # dithers and any profile created/switched-to while the plugin ran
+    try {
+        if ($profilesBackedUp) {
+            if (Test-Path $profilesDir) { Remove-Item $profilesDir -Recurse -Force }
+            if ($profilesDirExisted) {
+                New-Item -ItemType Directory -Path $profilesDir -Force | Out-Null
+                if (Test-Path $profilesBackupDir) {
+                    Copy-Item (Join-Path $profilesBackupDir '*.json') $profilesDir -ErrorAction SilentlyContinue
+                }
+            }
+            if ($profileListExisted) {
+                Set-Content -Path $profileListFile -Value $profileListBackup -NoNewline
+            } elseif (Test-Path $profileListFile) {
+                Remove-Item $profileListFile
+            }
+            Log 'Restored original statistics profiles.'
+        }
+    } catch { Log "WARNING: could not restore statistics profiles: $($_.Exception.Message)" }
 
     if (-not $KeepPhd2) {
         try {

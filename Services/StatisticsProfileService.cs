@@ -107,25 +107,49 @@ namespace DitherStatistics.Plugin {
 
         // ---- Data file I/O ----
 
+        /// <summary>
+        /// Writes via a temp file + File.Replace/Move so a crash or power loss
+        /// mid-write cannot leave a truncated JSON file behind.
+        /// </summary>
         public void SaveProfileDataToFile(string profileName, PersistedStatisticsData data) {
             lock (persistenceLock) {
                 if (!Directory.Exists(profilesDirectory)) {
                     Directory.CreateDirectory(profilesDirectory);
                 }
                 var json = JsonSerializer.Serialize(data);
-                File.WriteAllText(GetProfileDataFilePath(profileName), json);
+                var targetPath = GetProfileDataFilePath(profileName);
+                var tempPath = targetPath + ".tmp";
+                File.WriteAllText(tempPath, json);
+                if (File.Exists(targetPath)) {
+                    File.Replace(tempPath, targetPath, null);
+                } else {
+                    File.Move(tempPath, targetPath);
+                }
             }
         }
 
         /// <summary>
-        /// Returns null when no data file exists; throws on unreadable or corrupt content.
+        /// Returns null when no data file exists; throws on unreadable content.
+        /// A corrupt (unparsable) file is renamed to &lt;name&gt;.json.bak before the
+        /// exception propagates, so the caller can start empty and the broken
+        /// content stays around for inspection instead of being overwritten by
+        /// the next save.
         /// </summary>
         public PersistedStatisticsData LoadProfileDataFromFile(string profileName) {
             var path = GetProfileDataFilePath(profileName);
             if (!File.Exists(path)) return null;
             lock (persistenceLock) {
                 var json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize<PersistedStatisticsData>(json);
+                try {
+                    return JsonSerializer.Deserialize<PersistedStatisticsData>(json);
+                } catch (JsonException) {
+                    var backupPath = path + ".bak";
+                    if (File.Exists(backupPath)) {
+                        File.Delete(backupPath);
+                    }
+                    File.Move(path, backupPath);
+                    throw;
+                }
             }
         }
 

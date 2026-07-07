@@ -32,6 +32,12 @@ namespace DitherStatistics.Plugin {
         private readonly Dictionary<int, TaskCompletionSource<JsonElement>> pendingRequests = new Dictionary<int, TaskCompletionSource<JsonElement>>();
         private readonly object requestLock = new object();
 
+        // Serializes concurrent JSON-RPC writes: QueryExposureTime/QueryPixelScale
+        // are fired from several places (connect, StartGuiding, ConfigurationChange,
+        // the SettleDone pixel-scale retry) and would otherwise interleave bytes on
+        // the shared writer, producing a corrupt request line.
+        private readonly SemaphoreSlim writeLock = new SemaphoreSlim(1, 1);
+
         // Guide exposure: from the get_exposure query, or measured from the
         // spacing of the guide steps when the query is unavailable
         private double currentGuideExposure = 0;  // Current guide exposure time in seconds
@@ -42,7 +48,7 @@ namespace DitherStatistics.Plugin {
         public event EventHandler<PHD2GuideStepEventArgs> GuideStep;
         public event EventHandler StarLost;
         public event EventHandler GuidingStarted;
-        public event EventHandler<string> ConnectionStatusChanged;
+        public event EventHandler<Phd2ConnectionStatus> ConnectionStatusChanged;
 
         public bool IsConnected => isConnected && client?.Connected == true;
 
@@ -72,6 +78,15 @@ namespace DitherStatistics.Plugin {
                     Logger.Info($"PHD2Client: Connecting to PHD2 at {host}:{port}...");
                 }
 
+                // A lost connection leaves the previous socket/reader/writer behind
+                // (only an explicit Disconnect cleans up) - dispose them before
+                // creating the new connection so reconnects do not leak resources
+                try { cancellationTokenSource?.Cancel(); } catch (ObjectDisposedException) { }
+                cancellationTokenSource?.Dispose();
+                reader?.Dispose();
+                writer?.Dispose();
+                client?.Dispose();
+
                 client = new TcpClient();
                 await client.ConnectAsync(host, port);
 
@@ -86,7 +101,7 @@ namespace DitherStatistics.Plugin {
                 readTask = Task.Run(() => ReadEventsAsync(cancellationTokenSource.Token));
 
                 Logger.Info("PHD2Client: Connected successfully!");
-                ConnectionStatusChanged?.Invoke(this, "Connected");
+                ConnectionStatusChanged?.Invoke(this, Phd2ConnectionStatus.Connected);
 
                 // Query initial exposure time and guider pixel scale
                 _ = Task.Run(async () => {
@@ -104,7 +119,7 @@ namespace DitherStatistics.Plugin {
                     hasLoggedConnectionFailure = true;
                 }
                 isConnected = false;
-                ConnectionStatusChanged?.Invoke(this, $"Connection failed: {ex.Message}");
+                ConnectionStatusChanged?.Invoke(this, Phd2ConnectionStatus.ConnectionFailed);
                 return false;
             }
         }
@@ -124,7 +139,9 @@ namespace DitherStatistics.Plugin {
                 writer?.Dispose();
                 client?.Close();
 
-                ConnectionStatusChanged?.Invoke(this, "Disconnected");
+                FailAllPendingRequests(new Exception("PHD2 disconnected"));
+
+                ConnectionStatusChanged?.Invoke(this, Phd2ConnectionStatus.Disconnected);
                 Logger.Info("PHD2Client: Disconnected");
 
             } catch (Exception ex) {
@@ -142,12 +159,18 @@ namespace DitherStatistics.Plugin {
                 while (!cancellationToken.IsCancellationRequested && IsConnected) {
                     string line = await reader.ReadLineAsync();
 
-                    if (string.IsNullOrEmpty(line)) {
-                        // Connection closed
+                    if (line == null) {
+                        // Only null means the stream ended; a blank keep-alive line
+                        // must not tear the connection down.
                         Logger.Warning("PHD2Client: Connection closed by server");
                         isConnected = false;
-                        ConnectionStatusChanged?.Invoke(this, "Connection lost");
+                        FailAllPendingRequests(new Exception("PHD2 connection closed"));
+                        ConnectionStatusChanged?.Invoke(this, Phd2ConnectionStatus.ConnectionLost);
                         break;
+                    }
+
+                    if (line.Length == 0) {
+                        continue; // Skip empty keep-alive lines
                     }
 
                     ProcessEvent(line);
@@ -156,7 +179,8 @@ namespace DitherStatistics.Plugin {
                 if (!cancellationToken.IsCancellationRequested) {
                     Logger.Error($"PHD2Client: Error reading events: {ex.Message}");
                     isConnected = false;
-                    ConnectionStatusChanged?.Invoke(this, $"Error: {ex.Message}");
+                    FailAllPendingRequests(new Exception($"PHD2 connection lost: {ex.Message}"));
+                    ConnectionStatusChanged?.Invoke(this, Phd2ConnectionStatus.ConnectionLost);
                 }
             }
 
@@ -401,7 +425,9 @@ namespace DitherStatistics.Plugin {
             }
 
             int requestId;
-            TaskCompletionSource<JsonElement> tcs = new TaskCompletionSource<JsonElement>();
+            // RunContinuationsAsynchronously so the awaiting continuation does not run
+            // inline on the read-loop thread while HandleJsonRpcResponse holds requestLock.
+            TaskCompletionSource<JsonElement> tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             lock (requestLock) {
                 requestId = ++jsonRpcId;
@@ -426,8 +452,13 @@ namespace DitherStatistics.Plugin {
                     jsonRequest = JsonSerializer.Serialize(requestNoParams);
                 }
 
-                // Send request
-                await writer.WriteLineAsync(jsonRequest);
+                // Send request (serialized so concurrent queries don't interleave bytes)
+                await writeLock.WaitAsync();
+                try {
+                    await writer.WriteLineAsync(jsonRequest);
+                } finally {
+                    writeLock.Release();
+                }
                 Logger.Debug($"PHD2Client: Sent JSON-RPC request: {jsonRequest}");
 
                 // Wait for response with timeout
@@ -469,17 +500,36 @@ namespace DitherStatistics.Plugin {
                         if (root.TryGetProperty("error", out JsonElement errorElement)) {
                             string errorMsg = errorElement.ToString();
                             Logger.Warning($"PHD2Client: JSON-RPC error for request {id}: {errorMsg}");
-                            tcs.SetException(new Exception($"PHD2 RPC error: {errorMsg}"));
+                            tcs.TrySetException(new Exception($"PHD2 RPC error: {errorMsg}"));
                         } else if (root.TryGetProperty("result", out JsonElement resultElement)) {
                             Logger.Debug($"PHD2Client: JSON-RPC response received for id {id}");
-                            tcs.SetResult(resultElement);
+                            // Clone: the continuation now runs asynchronously, after the
+                            // owning JsonDocument (in ProcessEvent's using block) is disposed.
+                            tcs.TrySetResult(resultElement.Clone());
                         } else {
-                            tcs.SetException(new Exception("Invalid JSON-RPC response"));
+                            tcs.TrySetException(new Exception("Invalid JSON-RPC response"));
                         }
                     }
                 }
             } catch (Exception ex) {
                 Logger.Warning($"PHD2Client: Error handling JSON-RPC response: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Fail every in-flight JSON-RPC request when the connection drops, instead of
+        /// letting each ride out its 5 s timeout. Continuations run asynchronously
+        /// (RunContinuationsAsynchronously on the TCS), so this never runs awaiting code
+        /// inline here.
+        /// </summary>
+        private void FailAllPendingRequests(Exception ex) {
+            List<TaskCompletionSource<JsonElement>> toFail;
+            lock (requestLock) {
+                toFail = new List<TaskCompletionSource<JsonElement>>(pendingRequests.Values);
+                pendingRequests.Clear();
+            }
+            foreach (var tcs in toFail) {
+                tcs.TrySetException(ex);
             }
         }
 
@@ -543,6 +593,7 @@ namespace DitherStatistics.Plugin {
             reader?.Dispose();
             writer?.Dispose();
             client?.Dispose();
+            writeLock?.Dispose();
         }
     }
 }

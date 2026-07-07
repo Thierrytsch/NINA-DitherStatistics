@@ -104,6 +104,79 @@ namespace DitherStatistics.Tests {
             Assert.Single(Directory.GetFiles(tempDir, "*_Default_settle_analysis.txt"));
         }
 
+        /// <summary>
+        /// The session RMS/StdDev (CurrentRunningRMS/CurrentRMSStdDev) are accumulated
+        /// incrementally with Welford's algorithm instead of retained lists (unbounded
+        /// growth over an all-day session) - this pins the result to the direct
+        /// Σ(x-mean)² formula it replaced, over the exact guide steps that feed the
+        /// session statistics for a normal dither cycle.
+        /// </summary>
+        [Fact]
+        public void SessionRms_MatchesDirectCalculation_ForWelfordAccumulator() {
+            using var service = CreateService();
+            DitherSettingsRecommendation recommendation = null;
+            using var recommendationFired = new ManualResetEventSlim(false);
+            service.DitherRecommendationUpdated += (s, r) => { recommendation = r; recommendationFired.Set(); };
+
+            var start = DateTime.Now.AddMinutes(-5);
+            service.HandleGuidingStarted();
+            FeedReferenceWindow(service, start, count: 30);
+            RunDitherCycle(service, start.AddSeconds(70));
+
+            Assert.True(recommendationFired.Wait(TimeSpan.FromSeconds(10)), "DitherRecommendationUpdated was not fired");
+            Assert.NotNull(recommendation);
+
+            // Reproduce the exact guide steps that feed the session statistics: the 30
+            // reference-window steps (FeedReferenceWindow's formula) plus the 10 post-settle
+            // steps RunDitherCycle sends after SettleDone (settling steps are excluded
+            // while dithering, so they don't count).
+            var dx = new List<double>();
+            var dy = new List<double>();
+            for (int i = 0; i < 30; i++) {
+                dx.Add(0.3 + (i % 5) * 0.05);
+                dy.Add(0.3);
+            }
+            for (int i = 0; i < 10; i++) {
+                dx.Add(0.3);
+                dy.Add(0.3);
+            }
+
+            double meanDx = dx.Average();
+            double raStdDev = Math.Sqrt(dx.Sum(v => Math.Pow(v - meanDx, 2)) / (dx.Count - 1));
+            double meanDy = dy.Average();
+            double decStdDev = Math.Sqrt(dy.Sum(v => Math.Pow(v - meanDy, 2)) / (dy.Count - 1));
+            double expectedRunningRms = Math.Sqrt(raStdDev * raStdDev + decStdDev * decStdDev);
+
+            var pairDistances = dx.Zip(dy, (x, y) => Math.Sqrt(x * x + y * y)).ToList();
+            double meanPd = pairDistances.Average();
+            double expectedRmsStdDev = Math.Sqrt(pairDistances.Sum(v => Math.Pow(v - meanPd, 2)) / (pairDistances.Count - 1));
+
+            Assert.Equal(expectedRunningRms, recommendation.CurrentRunningRMS, 9);
+            Assert.Equal(expectedRmsStdDev, recommendation.CurrentRMSStdDev, 9);
+        }
+
+        [Fact]
+        public void DiagnosticFile_HasPlausibleTimestamp_WhenGuidingStartedNeverFired() {
+            // Simulates the plugin connecting while PHD2 is already guiding: no
+            // GuidingStarted event ever arrives, so sessionStartTime must already be
+            // initialized from the constructor instead of defaulting to DateTime.MinValue.
+            using var service = CreateService();
+            using var recommendationFired = new ManualResetEventSlim(false);
+            service.DitherRecommendationUpdated += (s, r) => recommendationFired.Set();
+            var start = DateTime.Now.AddMinutes(-5);
+
+            FeedReferenceWindow(service, start);
+            RunDitherCycle(service, start.AddSeconds(70));
+
+            Assert.True(recommendationFired.Wait(TimeSpan.FromSeconds(10)), "DitherRecommendationUpdated was not fired");
+
+            var files = Directory.GetFiles(tempDir, "*_Default_dither_analysis.txt");
+            var file = Assert.Single(files);
+            string sessionTimestamp = Path.GetFileName(file).Split('_')[0] + "_" + Path.GetFileName(file).Split('_')[1];
+            var parsed = DateTime.ParseExact(sessionTimestamp, "yyyyMMdd_HHmmss", null);
+            Assert.True((DateTime.Now - parsed) < TimeSpan.FromMinutes(1), $"Session timestamp {sessionTimestamp} is not plausible");
+        }
+
         [Fact]
         public void GuideStepsDuringDithering_AreExcludedFromReferenceWindow() {
             using var service = CreateService();
@@ -264,6 +337,33 @@ namespace DitherStatistics.Tests {
             service.RestoreDitherAnalysisData(new DitherAnalysisSnapshot());
 
             Assert.Equal(16, service.GetDitherAnalysisSnapshot().DitherData.Count);
+        }
+
+        [Fact]
+        public void Constructor_PrunesDiagnosticFiles_KeepsNewest30() {
+            // Create 50 old dither_analysis and 50 old settle_analysis files
+            var now = DateTime.UtcNow;
+            for (int i = 0; i < 50; i++) {
+                var timestamp = now.AddDays(-i);
+                string ditherFile = Path.Combine(tempDir, $"{timestamp:yyyyMMdd_HHmmss}_Default_dither_analysis.txt");
+                string settleFile = Path.Combine(tempDir, $"{timestamp:yyyyMMdd_HHmmss}_Default_settle_analysis.txt");
+                File.WriteAllText(ditherFile, "test");
+                File.WriteAllText(settleFile, "test");
+                File.SetLastWriteTimeUtc(ditherFile, timestamp);
+                File.SetLastWriteTimeUtc(settleFile, timestamp);
+            }
+
+            Assert.Equal(50, Directory.GetFiles(tempDir, "*_dither_analysis.txt").Length);
+            Assert.Equal(50, Directory.GetFiles(tempDir, "*_settle_analysis.txt").Length);
+
+            // Create a new service - this should trigger pruning in the constructor
+            using var service = CreateService();
+
+            // Only the newest 30 should remain for each type
+            int ditherCount = Directory.GetFiles(tempDir, "*_dither_analysis.txt").Length;
+            int settleCount = Directory.GetFiles(tempDir, "*_settle_analysis.txt").Length;
+            Assert.Equal(30, ditherCount);
+            Assert.Equal(30, settleCount);
         }
     }
 }

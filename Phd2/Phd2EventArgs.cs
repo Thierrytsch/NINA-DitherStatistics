@@ -2,6 +2,20 @@ using System;
 
 namespace DitherStatistics.Plugin {
     /// <summary>
+    /// Connection state changes raised by PHD2Client.ConnectionStatusChanged.
+    /// The distinction matters for the consumers: Phd2ConnectionManager reconnects
+    /// only after ConnectionLost (involuntary loss detected by the read loop),
+    /// while Disconnected is the explicit shutdown (Disconnect/Dispose) that the
+    /// optimizer uses to abort its running collection window - never reconnect on it.
+    /// </summary>
+    public enum Phd2ConnectionStatus {
+        Connected,
+        ConnectionFailed,
+        ConnectionLost,
+        Disconnected
+    }
+
+    /// <summary>
     /// Event args for GuidingDithered event (Dither START with pixel shift)
     /// </summary>
     public class PHD2GuidingDitheredEventArgs : EventArgs {

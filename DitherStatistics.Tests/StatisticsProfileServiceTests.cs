@@ -89,11 +89,54 @@ namespace DitherStatistics.Plugin.Tests {
         }
 
         [Fact]
+        public void Load_CorruptFile_RenamesFileToBak() {
+            Directory.CreateDirectory(profilesDirectory);
+            var brokenPath = Path.Combine(profilesDirectory, "Broken.json");
+            File.WriteAllText(brokenPath, "{ not json");
+
+            Assert.ThrowsAny<Exception>(() => service.LoadProfileDataFromFile("Broken"));
+
+            Assert.False(File.Exists(brokenPath));
+            Assert.True(File.Exists(brokenPath + ".bak"));
+            Assert.Equal("{ not json", File.ReadAllText(brokenPath + ".bak"));
+        }
+
+        [Fact]
+        public void Load_CorruptFile_OverwritesExistingBakFile() {
+            Directory.CreateDirectory(profilesDirectory);
+            var brokenPath = Path.Combine(profilesDirectory, "Broken.json");
+            File.WriteAllText(brokenPath + ".bak", "old backup content");
+            File.WriteAllText(brokenPath, "{ still not json");
+
+            Assert.ThrowsAny<Exception>(() => service.LoadProfileDataFromFile("Broken"));
+
+            Assert.Equal("{ still not json", File.ReadAllText(brokenPath + ".bak"));
+        }
+
+        [Fact]
         public void ProfileDataFileExists_AfterSave_IsTrue() {
             service.SaveProfileDataToFile("Scope-A", new PersistedStatisticsData());
 
             Assert.True(service.ProfileDataFileExists("Scope-A"));
             Assert.True(File.Exists(Path.Combine(profilesDirectory, "Scope-A.json")));
+        }
+
+        [Fact]
+        public void Save_DoesNotLeaveTempFileBehind() {
+            service.SaveProfileDataToFile("Scope-A", BuildSampleData());
+
+            Assert.False(File.Exists(Path.Combine(profilesDirectory, "Scope-A.json.tmp")));
+        }
+
+        [Fact]
+        public void Save_OverExistingFile_ReplacesContentAtomically() {
+            service.SaveProfileDataToFile("Scope-A", new PersistedStatisticsData { CumulativeX = 1.0 });
+            service.SaveProfileDataToFile("Scope-A", BuildSampleData());
+
+            var loaded = service.LoadProfileDataFromFile("Scope-A");
+
+            Assert.Equal(2.5, loaded.CumulativeX);
+            Assert.False(File.Exists(Path.Combine(profilesDirectory, "Scope-A.json.tmp")));
         }
 
         // ---- Legacy v1.4 migration ----
