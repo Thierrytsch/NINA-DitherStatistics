@@ -328,7 +328,7 @@ result as before — a dark→bright red gradient scatter connected by thin line
 dot at the last point. Build clean; `dotnet test` 114 passed, 2 skipped (PHD2 integration tests,
 not guiding during this run).
 
-### C4 — Minor VM/manager cleanups
+### C4 ✅ — Minor VM/manager cleanups
 
 **Model: Haiku** — each item is a one-liner with an obvious correct form; no design freedom.
 
@@ -341,7 +341,22 @@ not guiding during this run).
   would remove a recurring source of confusion but touches many call sites — only do it if
   the maintainer wants the churn.
 
-### C5 — Unit tests for `Phd2ConnectionManager`
+**Done (2026-07-07):** First two items fixed; the optional rename was left untouched (it needs
+the maintainer's explicit go-ahead per its own note, and wasn't given here).
+`HideCommand`/`ToggleSettingsCommand` (`ViewModels/DitherStatisticsVM.cs`) are now
+`{ get; private set; }` properties assigned once in `InitializeCommands()`, alongside the other
+cached commands, instead of allocating a new `RelayCommand` on every binding access.
+`hasLoggedConnectionFailure` is now owned solely by `Phd2ConnectionManager`, which already had
+its own copy driving the deduped user-facing "Connecting/Connection failed/lost" Info/Warning
+logs from `ConnectionStatusChanged`. The field and its three dedup branches were removed from
+`Phd2/PHD2Client.cs`; the client's own per-attempt detail (`Connecting to PHD2 at {host}:{port}`
+and `Connection failed: {ex.Message}`) is now logged unconditionally at `Logger.Debug` instead of
+gated behind the flag — it no longer needs to dedup because the manager already suppresses the
+repeated higher-level status messages on every retry, and Debug-level detail is expected to be
+verbose. No test asserted the removed Info/Error-level client messages. Build clean; 114 tests
+pass (2 PHD2 integration tests skipped, PHD2 not guiding during this run).
+
+### C5 ✅ — Unit tests for `Phd2ConnectionManager`
 
 **Model: Sonnet** — straightforward testability refactor (inject delays), depends on A1.
 
@@ -349,6 +364,26 @@ The retry/reconnect policy (2 s / 10 s / 5 s) is the only remaining logic withou
 After A1 introduces the enum + `Stop()`, make the three delays injectable (constructor
 parameters with the current defaults) and add tests: retries until success, reconnects on
 `ConnectionLost`, does **not** reconnect on explicit `Disconnected`, `Stop()` halts the loop.
+
+**Done (2026-07-07):** The three delays were already made constructor-injectable in A1
+(`Phd2ConnectionManager(client, initialDelayMs, retryDelayMs, reconnectDelayMs)`, defaults
+unchanged), and A1 already added `Phd2ConnectionManagerTests.cs` covering reconnect-on-loss,
+no-reconnect-after-`Stop()`, and no-reconnect-on-explicit-`Disconnected` — but always starting
+from an already-connected state, so the retry loop itself (as opposed to the reconnect-after-loss
+path) was never exercised. This task closes that gap with two more tests, plus a small
+`FakePhd2Server` change to support them: `FakePhd2Server`'s constructor now takes an optional
+`port` parameter (default `0` for the existing ephemeral-port behavior) so a server can be bound
+to a specific port *after* a client has already failed to reach it there.
+`RetriesUntilSuccess_WhenServerBecomesAvailableLater` reserves a free loopback port (bind-then-
+immediately-`Stop()` a throwaway `TcpListener`), points a `PHD2Client`/`Phd2ConnectionManager` at
+it while nothing is listening (`Start()` fails, then the retry loop fails again after
+`retryDelayMs`), then binds a `FakePhd2Server` to that same port and asserts the manager connects
+without any code change on the production side. `Stop_DuringRetryLoop_PreventsLaterConnect` runs
+the same setup but calls `manager.Stop()` after two observed failures, *then* starts the server on
+that port, and asserts no connection ever happens — proving `Stop()` halts an in-flight retry loop
+(the existing A1 test only proved `Stop()` prevents a reconnect-after-loss from an already-connected
+state). Build clean; 116 tests pass (2 PHD2 integration tests skipped, PHD2 not guiding during this
+run); the two new tests were run three consecutive times with no flakiness.
 
 ---
 

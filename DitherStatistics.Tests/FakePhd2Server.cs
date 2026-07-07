@@ -40,8 +40,13 @@ namespace DitherStatistics.Tests {
         private bool exposureAnswered;
         private bool pixelScaleAnswered;
 
-        public FakePhd2Server() {
-            listener = new TcpListener(IPAddress.Loopback, 0);
+        /// <summary>
+        /// Bind to an ephemeral port (default), or to a specific port - used by
+        /// tests that need a server to appear later on a port a client already
+        /// tried and failed to reach.
+        /// </summary>
+        public FakePhd2Server(int port = 0) {
+            listener = new TcpListener(IPAddress.Loopback, port);
             listener.Start();
             Port = ((IPEndPoint)listener.LocalEndpoint).Port;
             acceptTask = Task.Run(AcceptLoop);

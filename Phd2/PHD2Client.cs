@@ -25,7 +25,6 @@ namespace DitherStatistics.Plugin {
         private readonly string host;
         private readonly int port;
         private bool isConnected;
-        private bool hasLoggedConnectionFailure;
 
         // JSON-RPC request tracking
         private int jsonRpcId = 0;
@@ -73,10 +72,9 @@ namespace DitherStatistics.Plugin {
                     return true;
                 }
 
-                // Only log connection attempt the first time
-                if (!hasLoggedConnectionFailure) {
-                    Logger.Info($"PHD2Client: Connecting to PHD2 at {host}:{port}...");
-                }
+                // Dedup of repeated connect-attempt logging lives in Phd2ConnectionManager
+                // (which owns the retry loop); this is per-attempt detail only.
+                Logger.Debug($"PHD2Client: Connecting to PHD2 at {host}:{port}...");
 
                 // A lost connection leaves the previous socket/reader/writer behind
                 // (only an explicit Disconnect cleans up) - dispose them before
@@ -95,7 +93,6 @@ namespace DitherStatistics.Plugin {
                 writer = new StreamWriter(stream, Encoding.UTF8) { AutoFlush = true };
                 cancellationTokenSource = new CancellationTokenSource();
                 isConnected = true;
-                hasLoggedConnectionFailure = false; // Reset flag on successful connection
 
                 // Start reading events in background
                 readTask = Task.Run(() => ReadEventsAsync(cancellationTokenSource.Token));
@@ -113,11 +110,9 @@ namespace DitherStatistics.Plugin {
                 return true;
 
             } catch (Exception ex) {
-                // Only log error the first time
-                if (!hasLoggedConnectionFailure) {
-                    Logger.Error($"PHD2Client: Connection failed: {ex.Message}");
-                    hasLoggedConnectionFailure = true;
-                }
+                // Dedup lives in Phd2ConnectionManager (ConnectionFailed status); this
+                // is per-attempt detail only.
+                Logger.Debug($"PHD2Client: Connection failed: {ex.Message}");
                 isConnected = false;
                 ConnectionStatusChanged?.Invoke(this, Phd2ConnectionStatus.ConnectionFailed);
                 return false;

@@ -1175,6 +1175,8 @@ namespace DitherStatistics.Plugin {
         public ICommand ExportMetricsCommand { get; private set; }
         public ICommand CreateProfileCommand { get; private set; }
         public ICommand DeleteProfileCommand { get; private set; }
+        public ICommand HideCommand { get; private set; }
+        public ICommand ToggleSettingsCommand { get; private set; }
 
         private void InitializeCommands() {
             ClearDataCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ClearData);
@@ -1183,6 +1185,8 @@ namespace DitherStatistics.Plugin {
             ExportMetricsCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(ExportQualityMetrics);
             CreateProfileCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(CreateProfile);
             DeleteProfileCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(DeleteProfile);
+            HideCommand = new CommunityToolkit.Mvvm.Input.RelayCommand<object>(Hide);
+            ToggleSettingsCommand = new CommunityToolkit.Mvvm.Input.RelayCommand<object>(ToggleSettings);
         }
 
         private void ClearData() {
@@ -1547,10 +1551,6 @@ namespace DitherStatistics.Plugin {
                 RaisePropertyChanged();
             }
         }
-
-        public ICommand HideCommand => new CommunityToolkit.Mvvm.Input.RelayCommand<object>(Hide);
-
-        public ICommand ToggleSettingsCommand => new CommunityToolkit.Mvvm.Input.RelayCommand<object>(ToggleSettings);
 
         public void Hide(object parameter) {
             // Toggle visibility instead of just hiding
