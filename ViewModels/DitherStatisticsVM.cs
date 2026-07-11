@@ -31,6 +31,7 @@ namespace DitherStatistics.Plugin {
         private readonly Phd2ConnectionManager phd2ConnectionManager;
         private readonly PluginSettingsStore settingsStore = new PluginSettingsStore();
         private readonly StatisticsProfileService profileDataService = new StatisticsProfileService();
+        private readonly SmokeTestBridge smokeTestBridge;
         private DitherEvent currentDither = null;
 
         // Theme color monitoring
@@ -131,6 +132,12 @@ namespace DitherStatistics.Plugin {
             // Start theme color monitoring for dynamic chart updates
             themeWatcher.PrimaryColorChanged += OnThemeColorChanged;
             themeWatcher.Start();
+
+            // Optional localhost diagnostic channel for the stage-3 smoke test;
+            // disabled unless smoketest_settings.txt opts in (see SmokeTestBridge).
+            var (bridgeEnabled, bridgePort) = settingsStore.ReadSmokeTestSetting();
+            smokeTestBridge = new SmokeTestBridge(new SmokeTestBridgeAdapter(this), bridgeEnabled, bridgePort);
+            smokeTestBridge.Start();
 
             Logger.Info("DitherStatisticsVM initialized successfully with ScottPlot 4.1 (Lazy Loading)!");
         }
@@ -1568,6 +1575,10 @@ namespace DitherStatistics.Plugin {
 
         public void Dispose() {
             try {
+                // Stop the diagnostic channel first so no in-flight command marshals
+                // onto the UI thread during teardown
+                smokeTestBridge?.Dispose();
+
                 // Persist final statistics state before shutdown
                 SaveStatisticsData();
 
@@ -1677,6 +1688,152 @@ namespace DitherStatistics.Plugin {
                 var fallbackGroup = new GeometryGroup();
                 fallbackGroup.Children.Add(new EllipseGeometry(new Point(10, 10), 8, 8));
                 return fallbackGroup;
+            }
+        }
+
+        #endregion
+
+        #region SmokeTest bridge adapter
+
+        /// <summary>
+        /// Bridges the localhost diagnostic channel (SmokeTestBridge) to this VM. The
+        /// bridge calls every method on the WPF UI thread, so these run exactly the
+        /// same code paths as the panel buttons/toggles. Nested so it can read the
+        /// VM's private live collections; it exposes only panel-equivalent operations.
+        /// </summary>
+        private sealed class SmokeTestBridgeAdapter : ISmokeTestBridgeAdapter {
+            private readonly DitherStatisticsVM vm;
+
+            public SmokeTestBridgeAdapter(DitherStatisticsVM vm) {
+                this.vm = vm;
+            }
+
+            public IDictionary<string, object> GetState() {
+                return new Dictionary<string, object> {
+                    ["TotalDithers"] = vm.TotalDithers,
+                    ["SuccessfulDithers"] = vm.SuccessfulDithers,
+                    ["SuccessRate"] = vm.SuccessRate,
+                    ["MedianSettleTime"] = vm.MedianSettleTime,
+                    ["MinSettleTime"] = vm.MinSettleTime,
+                    ["MaxSettleTime"] = vm.MaxSettleTime,
+                    ["AverageSettleTime"] = vm.AverageSettleTime,
+                    ["StdDevSettleTime"] = vm.StdDevSettleTime,
+                    ["TotalDriftX"] = vm.TotalDriftX,
+                    ["TotalDriftY"] = vm.TotalDriftY,
+                    ["PixelShiftPointCount"] = vm.pixelShiftValues.Count,
+                    ["SettleTimePointCount"] = vm.settleTimeValues.Count,
+                    ["HasQualityData"] = vm.HasQualityData,
+                    ["HasRecommendationData"] = vm.HasRecommendationData,
+                    ["Quality"] = BuildQuality(),
+                    ["Optimizer"] = BuildOptimizer(),
+                    ["Toggles"] = new Dictionary<string, object> {
+                        ["Persistence"] = vm.IsStatisticsPersistenceEnabled,
+                        ["MultiProfile"] = vm.IsMultiProfileEnabled,
+                        ["Quality"] = vm.IsQualityAssessmentEnabled,
+                        ["Optimizer"] = vm.IsDitherOptimizerEnabled
+                    },
+                    ["ProfileNames"] = vm.ProfileNames.ToList(),
+                    ["SelectedProfileName"] = vm.SelectedProfileName
+                };
+            }
+
+            private object BuildQuality() {
+                var q = vm.QualityResult;
+                if (q == null) return null;
+                return new Dictionary<string, object> {
+                    ["CombinedScore"] = q.CombinedScore,
+                    ["QualityRating"] = q.QualityRating,
+                    ["CenteredL2Discrepancy"] = q.CenteredL2Discrepancy,
+                    ["DriftRatio"] = q.DriftRatio,
+                    ["NearestNeighborIndex"] = q.NearestNeighborIndex,
+                    ["GapFillMetric_1x"] = q.GapFillMetric_1x,
+                    ["GapFillMetric_2x"] = q.GapFillMetric_2x,
+                    ["GapFillMetric_3x"] = q.GapFillMetric_3x,
+                    ["PixelScaleRatio"] = q.PixelScaleRatio,
+                    ["Pixfrac"] = q.Pixfrac,
+                    ["EffectiveScaleRatioText"] = vm.EffectiveScaleRatioText
+                };
+            }
+
+            private object BuildOptimizer() {
+                var r = vm.Recommendation;
+                if (r == null) return null;
+                double scale = r.GuiderPixelScaleArcsec;
+                object Arcsec(double px) => scale > 0 ? (object)(px * scale) : null;
+                return new Dictionary<string, object> {
+                    ["SettlePixel_Strict"] = r.SettlePixelTolerance_Quality,
+                    ["SettlePixel_Standard"] = r.SettlePixelTolerance_Balanced,
+                    ["SettlePixel_Fast"] = r.SettlePixelTolerance_Performance,
+                    ["SettleArcsec_Strict"] = Arcsec(r.SettlePixelTolerance_Quality),
+                    ["SettleArcsec_Standard"] = Arcsec(r.SettlePixelTolerance_Balanced),
+                    ["SettleArcsec_Fast"] = Arcsec(r.SettlePixelTolerance_Performance),
+                    ["ExpectedSettle_Strict"] = r.ExpectedSettleDuration_Quality,
+                    ["ExpectedSettle_Standard"] = r.ExpectedSettleDuration_Balanced,
+                    ["ExpectedSettle_Fast"] = r.ExpectedSettleDuration_Performance,
+                    ["Timeout_Strict"] = r.SettleTimeout_Quality,
+                    ["Timeout_Standard"] = r.SettleTimeout_Balanced,
+                    ["Timeout_Fast"] = r.SettleTimeout_Performance,
+                    ["DitherEventsAnalyzed"] = r.DitherEventsAnalyzed,
+                    ["GuiderPixelScaleArcsec"] = scale,
+                    ["GuideExposure"] = r.GuideExposure,
+                    ["RecommendationInfo"] = vm.RecommendationInfo,
+                    ["RecommendationWarning"] = vm.RecommendationWarning
+                };
+            }
+
+            public void Invoke(string name) {
+                ICommand command = name switch {
+                    "ClearData" => vm.ClearDataCommand,
+                    "ExportCsv" => vm.ExportDitherEventsCsvCommand,
+                    "ExportReport" => vm.ExportMetricsCommand,
+                    "Recalc" => vm.RecalculateMetricsCommand,
+                    _ => throw new ArgumentException($"unknown invoke target '{name}'")
+                };
+                command.Execute(null);
+            }
+
+            public bool SetToggle(string name, bool value) {
+                switch (name) {
+                    case "Persistence": {
+                        bool prior = vm.IsStatisticsPersistenceEnabled;
+                        vm.IsStatisticsPersistenceEnabled = value;
+                        return prior;
+                    }
+                    case "MultiProfile": {
+                        bool prior = vm.IsMultiProfileEnabled;
+                        vm.IsMultiProfileEnabled = value;
+                        return prior;
+                    }
+                    case "Quality": {
+                        bool prior = vm.IsQualityAssessmentEnabled;
+                        vm.IsQualityAssessmentEnabled = value;
+                        return prior;
+                    }
+                    case "Optimizer": {
+                        bool prior = vm.IsDitherOptimizerEnabled;
+                        vm.IsDitherOptimizerEnabled = value;
+                        return prior;
+                    }
+                    default:
+                        throw new ArgumentException($"unknown toggle '{name}'");
+                }
+            }
+
+            public void CreateProfile(string name) {
+                vm.ProfileNameInput = name;
+                vm.CreateProfileCommand.Execute(null);
+            }
+
+            public void SelectProfile(string name) {
+                vm.SelectedProfileName = name;
+            }
+
+            public void DeleteProfile(string name) {
+                // DeleteProfile() deletes the currently selected profile, so select it first
+                if (!string.Equals(vm.SelectedProfileName, name, StringComparison.OrdinalIgnoreCase)) {
+                    vm.SelectedProfileName = name;
+                }
+                vm.DeleteProfileCommand.Execute(null);
             }
         }
 

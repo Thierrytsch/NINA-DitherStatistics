@@ -17,6 +17,7 @@ namespace DitherStatistics.Plugin {
         public const string MultiProfileFileName = "multiprofile_settings.txt";
         public const string QualityMetricsFileName = "quality_settings.txt";
         public const string ProfileListFileName = "profiles_list.txt";
+        public const string SmokeTestFileName = "smoketest_settings.txt";
 
         private readonly string baseDirectory;
 
@@ -115,6 +116,26 @@ namespace DitherStatistics.Plugin {
             var lines = new List<string> { selected };
             lines.AddRange(names);
             File.WriteAllLines(filePath, lines);
+        }
+
+        // ---- smoketest_settings.txt ----
+        // Line 1 = "True"/"False" (enable the localhost SmokeTest diagnostic bridge),
+        // optional line 2 = port. Absent file -> disabled. Off by default; the bridge
+        // is a stage-3 smoke-test facility only (see Services/SmokeTestBridge.cs).
+
+        public (bool Enabled, int Port) ReadSmokeTestSetting(int defaultPort = SmokeTestBridge.DefaultPort) {
+            var filePath = PathFor(SmokeTestFileName);
+            if (!File.Exists(filePath)) {
+                return (false, defaultPort);
+            }
+
+            var lines = File.ReadAllLines(filePath);
+            bool enabled = lines.Length > 0 && bool.TryParse(lines[0].Trim(), out bool e) && e;
+            int port = defaultPort;
+            if (lines.Length > 1 && int.TryParse(lines[1].Trim(), out int p) && p > 0 && p <= 65535) {
+                port = p;
+            }
+            return (enabled, port);
         }
     }
 }

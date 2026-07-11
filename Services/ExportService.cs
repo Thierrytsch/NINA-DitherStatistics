@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
 
@@ -24,13 +25,13 @@ namespace DitherStatistics.Plugin {
             for (int i = 0; i < events.Count; i++) {
                 var evt = events[i];
                 csv.AppendLine($"{i + 1}," +
-                    $"{evt.StartTime:yyyy-MM-dd HH:mm:ss}," +
-                    $"{evt.EndTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "N/A"}," +
-                    $"{evt.PixelShiftX?.ToString("F4") ?? "N/A"}," +
-                    $"{evt.PixelShiftY?.ToString("F4") ?? "N/A"}," +
-                    $"{evt.CumulativeX:F4}," +
-                    $"{evt.CumulativeY:F4}," +
-                    $"{evt.SettleTime?.ToString("F2") ?? "N/A"}," +
+                    $"{evt.StartTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}," +
+                    $"{evt.EndTime?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? "N/A"}," +
+                    $"{evt.PixelShiftX?.ToString("F4", CultureInfo.InvariantCulture) ?? "N/A"}," +
+                    $"{evt.PixelShiftY?.ToString("F4", CultureInfo.InvariantCulture) ?? "N/A"}," +
+                    $"{evt.CumulativeX.ToString("F4", CultureInfo.InvariantCulture)}," +
+                    $"{evt.CumulativeY.ToString("F4", CultureInfo.InvariantCulture)}," +
+                    $"{evt.SettleTime?.ToString("F2", CultureInfo.InvariantCulture) ?? "N/A"}," +
                     $"{evt.Success}");
             }
 
