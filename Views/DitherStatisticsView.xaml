@@ -1,14 +1,277 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <UserControl x:Class="DitherStatistics.Plugin.DitherStatisticsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             mc:Ignorable="d" 
+             mc:Ignorable="d"
              d:DesignHeight="700" d:DesignWidth="400">
 
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- ============================================================
+             Design-system foundations (Step 1)
+             One place for the typographic scale, card/tile chrome, the
+             experimental badge, the chart tooltip overlay and the profile
+             action icons. Everything below references these instead of
+             repeating literals.
+             ============================================================ -->
+
+        <!-- Typographic scale — exactly four sizes.
+             SectionHeader 14 / MetricValue 15 / Body 11 / Caption 10.
+             SecondaryTextStyle is Caption + the muted brush, defined once so
+             the "secondary text" colour can be changed in a single place. -->
+        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
+        </Style>
+        <Style x:Key="MetricValueStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
+        </Style>
+        <Style x:Key="BodyTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
+        </Style>
+        <Style x:Key="CaptionTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
+        </Style>
+        <Style x:Key="SecondaryTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextStyle}">
+            <Setter Property="Foreground" Value="{DynamicResource ButtonForegroundDisabledBrush}"/>
+        </Style>
+
+        <!-- Shared card chrome applied to every top-level section Border. -->
+        <Style x:Key="SectionCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SecondaryBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+
+        <!-- Shared metric-tile chrome applied to every value tile. -->
+        <Style x:Key="MetricTileStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource TertiaryBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Padding" Value="8"/>
+        </Style>
+
+        <!-- Optimizer profile tile: metric-tile chrome, but the recommended (Fast)
+             column gets a PrimaryBrush accent border so the user-approved default
+             stands out from the neutral Strict/Standard columns. -->
+        <Style x:Key="OptimizerProfileTileStyle" TargetType="Border" BasedOn="{StaticResource MetricTileStyle}">
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRecommended}" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                    <Setter Property="BorderThickness" Value="2"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Optimizer "P## / tagline" subheader: muted, but emphasized on the
+             recommended column so the "recommended" tag reads at a glance. -->
+        <Style x:Key="OptimizerTaglineStyle" TargetType="TextBlock" BasedOn="{StaticResource SecondaryTextStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRecommended}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- One value line inside an optimizer tile: big bold value + muted unit.
+             Bound to an OptimizerProfileDisplay; the value/unit are supplied via Tag
+             on the host so the three (Settle Pixel / Expected Settle / Timeout) lines
+             reuse this shape. -->
+        <Style x:Key="OptimizerUnitRunStyle" TargetType="Run">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{DynamicResource ButtonForegroundDisabledBrush}"/>
+        </Style>
+        <Style x:Key="OptimizerValueRunStyle" TargetType="Run">
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
+        </Style>
+
+        <!-- Shared DataTemplate for one optimizer profile column. Replaces the three
+             copy-pasted Strict/Standard/Fast blocks; bound to OptimizerProfileDisplay. -->
+        <DataTemplate x:Key="OptimizerProfileTemplate">
+            <Border Style="{StaticResource OptimizerProfileTileStyle}"
+                    ToolTip="{Binding ToolTip}">
+                <StackPanel>
+                    <!-- Profile header -->
+                    <TextBlock Text="{Binding Name}"
+                              Style="{StaticResource BodyTextStyle}"
+                              FontWeight="Bold"
+                              HorizontalAlignment="Center"
+                              Margin="0,0,0,2"/>
+                    <TextBlock Style="{StaticResource OptimizerTaglineStyle}"
+                              HorizontalAlignment="Center"
+                              Margin="0,0,0,8">
+                        <Run Text="{Binding Quantile, Mode=OneWay}"/><Run Text="  /  "/><Run Text="{Binding Tagline, Mode=OneWay}"/>
+                    </TextBlock>
+
+                    <!-- Settle tolerance -->
+                    <TextBlock Text="Settle Pixel"
+                              Style="{StaticResource SecondaryTextStyle}"
+                              HorizontalAlignment="Center"
+                              ToolTip="Distance from lock position PHD2 waits for after a dither (guide camera pixels)"/>
+                    <TextBlock HorizontalAlignment="Center">
+                        <Run Text="{Binding SettlePixel, Mode=OneWay}" Style="{StaticResource OptimizerValueRunStyle}"/><Run Text=" px" Style="{StaticResource OptimizerUnitRunStyle}"/>
+                    </TextBlock>
+                    <TextBlock Text="{Binding Arcsec, Mode=OneWay}"
+                              Style="{StaticResource SecondaryTextStyle}"
+                              HorizontalAlignment="Center"
+                              Margin="0,0,0,6"/>
+
+                    <Border BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="0,1,0,0"
+                            Margin="4,0,4,6"/>
+
+                    <!-- Expected settle duration -->
+                    <TextBlock Text="Expected Settle"
+                              Style="{StaticResource SecondaryTextStyle}"
+                              HorizontalAlignment="Center"
+                              ToolTip="Median time from dither until guiding stayed below this tolerance — for information, do NOT enter as min settle time"/>
+                    <TextBlock HorizontalAlignment="Center" Margin="0,0,0,6">
+                        <Run Text="{Binding ExpectedSettle, Mode=OneWay}" Style="{StaticResource OptimizerValueRunStyle}"/><Run Text=" s" Style="{StaticResource OptimizerUnitRunStyle}"/>
+                    </TextBlock>
+
+                    <Border BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="0,1,0,0"
+                            Margin="4,0,4,6"/>
+
+                    <!-- Settle timeout -->
+                    <TextBlock Text="Settle Timeout"
+                              Style="{StaticResource SecondaryTextStyle}"
+                              HorizontalAlignment="Center"
+                              ToolTip="Suggested settle timeout: covers 95% of observed settle delays plus margin"/>
+                    <TextBlock HorizontalAlignment="Center">
+                        <Run Text="{Binding Timeout, Mode=OneWay}" Style="{StaticResource OptimizerValueRunStyle}"/><Run Text=" s" Style="{StaticResource OptimizerUnitRunStyle}"/>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <!-- Shared DataTemplate for the Quality / Optimizer "disabled or not enough
+             data" info box. Bound to a SectionStatusDisplay so both sections render
+             from one layout (title + resolved message + enable toggle). -->
+        <DataTemplate x:Key="SectionStatusCardTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}"
+                              Style="{StaticResource SectionHeaderStyle}"
+                              HorizontalAlignment="Center"
+                              Margin="0,0,0,4"/>
+                    <TextBlock Text="{Binding Message}"
+                              Style="{StaticResource SecondaryTextStyle}"
+                              HorizontalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- DynamicResource on purpose: ToggleSwitchStyle is defined further
+                     down in this dictionary, and StaticResource inside deferred
+                     template content only sees keys defined before the template —
+                     resolving it statically throws XamlParseException when the
+                     info box first becomes visible. -->
+                <CheckBox Grid.Column="1"
+                         IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                         HorizontalAlignment="Right"
+                         VerticalAlignment="Top"
+                         Margin="0,0,5,0"
+                         ToolTip="{Binding Title, StringFormat='Enable / Disable {0}'}"
+                         Style="{DynamicResource ToggleSwitchStyle}"/>
+            </Grid>
+        </DataTemplate>
+
+        <!-- Overall-rating chip palette. Moved out of the VM's QualityRatingColor
+             switch so the semantic green→red scale lives next to the rest of the
+             design-system resources (Step 5). RatingBadgeStyle picks a brush via a
+             DataTrigger on QualityResult.QualityRating; the white chip text keeps
+             the same encoding on every theme (the chip background is a fixed colour,
+             not a theme brush, so contrast doesn't shift with the theme). -->
+        <SolidColorBrush x:Key="RatingExcellentBrush" Color="#4CAF50"/>
+        <SolidColorBrush x:Key="RatingVeryGoodBrush" Color="#66BB6A"/>
+        <SolidColorBrush x:Key="RatingGoodBrush" Color="#8BC34A"/>
+        <SolidColorBrush x:Key="RatingAcceptableBrush" Color="#FFC107"/>
+        <SolidColorBrush x:Key="RatingFairBrush" Color="#FF9800"/>
+        <SolidColorBrush x:Key="RatingPoorBrush" Color="#F44336"/>
+        <SolidColorBrush x:Key="RatingNeutralBrush" Color="#9E9E9E"/>
+
+        <Style x:Key="RatingBadgeStyle" TargetType="Border">
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Background" Value="{StaticResource RatingNeutralBrush}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding QualityResult.QualityRating}" Value="Excellent">
+                    <Setter Property="Background" Value="{StaticResource RatingExcellentBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding QualityResult.QualityRating}" Value="Very Good">
+                    <Setter Property="Background" Value="{StaticResource RatingVeryGoodBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding QualityResult.QualityRating}" Value="Good">
+                    <Setter Property="Background" Value="{StaticResource RatingGoodBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding QualityResult.QualityRating}" Value="Acceptable">
+                    <Setter Property="Background" Value="{StaticResource RatingAcceptableBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding QualityResult.QualityRating}" Value="Fair">
+                    <Setter Property="Background" Value="{StaticResource RatingFairBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding QualityResult.QualityRating}" Value="Poor">
+                    <Setter Property="Background" Value="{StaticResource RatingPoorBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- EXPERIMENTAL badge: neutral outline chip. Red would read as an
+             error state, which is not what "experimental" means. -->
+        <Style x:Key="ExperimentalBadgeStyle" TargetType="Border">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <!-- Chart tooltip overlay: one shared accent (PrimaryBrush) for both
+             charts instead of two different hardcoded blues. Visibility stays
+             per-chart on each instance. -->
+        <Style x:Key="TooltipOverlayStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource TertiaryBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+            <Setter Property="Margin" Value="10"/>
+            <Setter Property="Opacity" Value="0.95"/>
+        </Style>
+
+        <!-- Self-defined monochrome icon geometries. NINA's SVGDictionary has
+             no add/delete keys reachable from a plugin (Step 0), so these are
+             local paths rendered in PrimaryBrush — never emojis. -->
+        <Geometry x:Key="IconAddGeometry">M13,5 L11,5 L11,11 L5,11 L5,13 L11,13 L11,19 L13,19 L13,13 L19,13 L19,11 L13,11 Z</Geometry>
+        <Geometry x:Key="IconDeleteGeometry">M10,4 L14,4 L15,6 L19,6 L19,8 L5,8 L5,6 L9,6 Z M6,9 L18,9 L17,21 L7,21 Z</Geometry>
+        <!-- Recalc (circular refresh) and Export (download-to-file) glyphs for the
+             Quality-card action buttons. Same local-geometry approach as the profile
+             icons, since NINA exposes no reachable refresh/save key (Step 0). -->
+        <Geometry x:Key="IconRefreshGeometry">M17.65,6.35 C16.2,4.9 14.21,4 12,4 C7.58,4 4.01,7.58 4.01,12 C4.01,16.42 7.58,20 12,20 C15.73,20 18.84,17.45 19.73,14 L17.65,14 C16.83,16.33 14.61,18 12,18 C8.69,18 6,15.31 6,12 C6,8.69 8.69,6 12,6 C13.66,6 15.14,6.69 16.22,7.78 L13,11 L20,11 L20,4 L17.65,6.35 Z</Geometry>
+        <Geometry x:Key="IconExportGeometry">M5,18 L19,18 L19,20 L5,20 Z M9,3 L15,3 L15,9 L19,9 L12,16 L5,9 L9,9 Z</Geometry>
 
         <!-- NINA StandardCheckBox Style - exact copy from NINA source -->
         <Style x:Key="ToggleSwitchStyle" TargetType="CheckBox">
@@ -81,7 +344,10 @@
             </Setter>
         </Style>
 
-        <Style x:Key="QualityButton" TargetType="Button">
+        <!-- Icon + text button (Quality-card Recalc / Export Report, Actions toolbar).
+             The template hosts a leading Path glyph (geometry via Tag) ahead of the
+             text so the actions read at a glance. -->
+        <Style x:Key="IconTextButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="{DynamicResource ButtonBackgroundBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource ButtonForegroundBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -92,16 +358,19 @@
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="border"
                                 Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="3"
                                 Padding="{TemplateBinding Padding}">
-                            <TextBlock x:Name="contentText"
-                                      Text="{TemplateBinding Content}"
-                                      Foreground="{TemplateBinding Foreground}"
-                                      HorizontalAlignment="Center"
-                                      VerticalAlignment="Center"
-                                      TextAlignment="Center"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Viewbox Width="12" Height="12"
+                                         Margin="0,0,5,0"
+                                         VerticalAlignment="Center">
+                                    <Path Data="{TemplateBinding Tag}"
+                                          Fill="{TemplateBinding Foreground}"/>
+                                </Viewbox>
+                                <TextBlock Text="{TemplateBinding Content}"
+                                          Foreground="{TemplateBinding Foreground}"
+                                          VerticalAlignment="Center"/>
+                            </StackPanel>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -116,15 +385,50 @@
             </Setter>
         </Style>
 
-        <!-- Delete button for statistics profiles - disabled while Default is selected -->
-        <Style x:Key="DeleteProfileButton" TargetType="Button" BasedOn="{StaticResource QualityButton}">
+        <!-- Icon button for the profile add/delete actions. Hosts a geometry
+             (supplied via Tag) in PrimaryBrush instead of a text glyph, so we
+             never fall back to emojis. -->
+        <Style x:Key="IconButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource ButtonBackgroundBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="25"/>
+            <Setter Property="Padding" Value="6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="3"
+                                Padding="{TemplateBinding Padding}">
+                            <Viewbox>
+                                <Path Data="{TemplateBinding Tag}"
+                                      Fill="{DynamicResource PrimaryBrush}"/>
+                            </Viewbox>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{DynamicResource ButtonBackgroundSelectedBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{DynamicResource ButtonBackgroundSelectedBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Delete icon button - disabled while Default is selected. -->
+        <Style x:Key="DeleteIconButtonStyle" TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">
             <Style.Triggers>
                 <DataTrigger Binding="{Binding SelectedProfileName}" Value="Default">
                     <Setter Property="IsEnabled" Value="False"/>
                 </DataTrigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Opacity" Value="0.4"/>
-                </Trigger>
             </Style.Triggers>
         </Style>
 
@@ -219,16 +523,10 @@
             <StackPanel Margin="10">
 
                 <!-- Pixel Shift Chart (ScottPlot) with Tooltip Overlay -->
-                <Border Background="{DynamicResource SecondaryBackgroundBrush}" 
-                       BorderBrush="{DynamicResource BorderBrush}" 
-                       BorderThickness="1" 
-                       Padding="10" 
-                       Margin="0,0,0,10">
+                <Border Style="{StaticResource SectionCardStyle}">
                     <StackPanel>
-                        <TextBlock Text="Pixel Shift" 
-                                  FontSize="14" 
-                                  FontWeight="SemiBold" 
-                                  Foreground="{DynamicResource PrimaryBrush}"
+                        <TextBlock Text="Pixel Shift"
+                                  Style="{StaticResource SectionHeaderStyle}"
                                   Margin="0,0,0,10"/>
 
                         <!-- Grid for Chart + Tooltip Overlay -->
@@ -237,36 +535,56 @@
                             <ContentControl Content="{Binding PixelShiftPlot}"/>
 
                             <!-- Tooltip Overlay -->
-                            <Border BorderBrush="#FF00A0FF" 
-                                   BorderThickness="2"
-                                   CornerRadius="3"
-                                   Padding="8"
-                                   HorizontalAlignment="Left"
-                                   VerticalAlignment="Top"
-                                   Margin="10"
-                                   Opacity="0.95"
-                                   Background="{DynamicResource TertiaryBackgroundBrush}"
+                            <Border Style="{StaticResource TooltipOverlayStyle}"
                                    Visibility="{Binding PixelShiftTooltipVisible, Converter={StaticResource BoolToVis}}">
                                 <TextBlock Text="{Binding PixelShiftTooltipText}"
-                                          Foreground="{DynamicResource PrimaryBrush}"
-                                          FontSize="13"
+                                          Style="{StaticResource BodyTextStyle}"
                                           FontWeight="SemiBold"/>
                             </Border>
                         </Grid>
+
+                        <!-- Legend below the chart. Swatch colors mirror
+                             ChartColorPalette in Services/ChartRenderers.cs - keep
+                             both in sync if a color changes. -->
+                        <StackPanel Orientation="Horizontal"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,8,0,0">
+                            <!-- Oldest -> newest gradient swatch -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,15,0">
+                                <Rectangle Width="24" Height="10"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,4,0">
+                                    <Rectangle.Fill>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                            <GradientStop Color="#640000" Offset="0.0"/>
+                                            <GradientStop Color="#DC0000" Offset="1.0"/>
+                                        </LinearGradientBrush>
+                                    </Rectangle.Fill>
+                                </Rectangle>
+                                <TextBlock Text="Oldest → Newest"
+                                          Style="{StaticResource SecondaryTextStyle}"
+                                          VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <!-- Latest point -->
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="10" Height="10"
+                                        Fill="#00BFFF"
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,4,0"/>
+                                <TextBlock Text="Latest"
+                                          Style="{StaticResource SecondaryTextStyle}"
+                                          VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
                 <!-- Settle Time Chart (ScottPlot) with Tooltip Overlay -->
-                <Border Background="{DynamicResource SecondaryBackgroundBrush}" 
-                       BorderBrush="{DynamicResource BorderBrush}" 
-                       BorderThickness="1" 
-                       Padding="10" 
-                       Margin="0,0,0,10">
+                <Border Style="{StaticResource SectionCardStyle}">
                     <StackPanel>
-                        <TextBlock Text="Settle Time History" 
-                                  FontSize="14" 
-                                  FontWeight="SemiBold" 
-                                  Foreground="{DynamicResource PrimaryBrush}"
+                        <TextBlock Text="Settle Time History"
+                                  Style="{StaticResource SectionHeaderStyle}"
                                   Margin="0,0,0,10"/>
 
                         <!-- Grid for Chart + Tooltip Overlay -->
@@ -275,85 +593,53 @@
                             <ContentControl Content="{Binding SettleTimePlot}"/>
 
                             <!-- Tooltip Overlay -->
-                            <Border BorderBrush="#FF1E90FF" 
-                                   BorderThickness="2"
-                                   CornerRadius="3"
-                                   Padding="8"
-                                   HorizontalAlignment="Left"
-                                   VerticalAlignment="Top"
-                                   Margin="10"
-                                   Opacity="0.95"
-                                   Background="{DynamicResource TertiaryBackgroundBrush}"
+                            <Border Style="{StaticResource TooltipOverlayStyle}"
                                    Visibility="{Binding SettleTimeTooltipVisible, Converter={StaticResource BoolToVis}}">
                                 <TextBlock Text="{Binding SettleTimeTooltipText}"
-                                          Foreground="{DynamicResource PrimaryBrush}"
-                                          FontSize="13"
+                                          Style="{StaticResource BodyTextStyle}"
                                           FontWeight="SemiBold"/>
                             </Border>
                         </Grid>
 
-                        <!-- Legend below the chart -->
-                        <StackPanel Orientation="Horizontal" 
-                                   HorizontalAlignment="Center" 
+                        <!-- Legend below the chart. Swatch colors mirror
+                             ChartColorPalette in Services/ChartRenderers.cs - keep
+                             both in sync if a color changes. -->
+                        <StackPanel Orientation="Horizontal"
+                                   HorizontalAlignment="Center"
                                    Margin="0,8,0,0">
-                            <!-- Settle Time -->
+                            <!-- Settle Time (same accent as Pixel Shift's "Latest" marker) -->
                             <StackPanel Orientation="Horizontal" Margin="0,0,15,0">
-                                <Ellipse Width="10" Height="10" 
-                                        Fill="DodgerBlue" 
+                                <Ellipse Width="10" Height="10"
+                                        Fill="#00BFFF"
                                         VerticalAlignment="Center"
                                         Margin="0,0,4,0"/>
-                                <TextBlock Text="Settle Time" 
-                                          FontSize="10" 
-                                          Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                <TextBlock Text="Settle Time"
+                                          Style="{StaticResource SecondaryTextStyle}"
                                           VerticalAlignment="Center"/>
                             </StackPanel>
 
-                            <!-- Average -->
+                            <!-- Average + shaded Avg ± StdDev band (one legend entry) -->
                             <StackPanel Orientation="Horizontal" Margin="0,0,15,0">
-                                <Rectangle Width="14" Height="2" 
-                                          Fill="Red" 
-                                          VerticalAlignment="Center"
-                                          Margin="0,0,4,0">
-                                    <Rectangle.OpacityMask>
-                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                            <GradientStop Color="Red" Offset="0.0"/>
-                                            <GradientStop Color="Transparent" Offset="0.3"/>
-                                            <GradientStop Color="Red" Offset="0.4"/>
-                                            <GradientStop Color="Transparent" Offset="0.6"/>
-                                            <GradientStop Color="Red" Offset="0.7"/>
-                                            <GradientStop Color="Transparent" Offset="1.0"/>
-                                        </LinearGradientBrush>
-                                    </Rectangle.OpacityMask>
-                                </Rectangle>
-                                <TextBlock Text="Average" 
-                                          FontSize="10" 
-                                          Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                          VerticalAlignment="Center"/>
-                            </StackPanel>
-
-                            <!-- Avg ± StdDev -->
-                            <StackPanel Orientation="Horizontal">
-                                <Rectangle Width="14" Height="2" 
+                                <Rectangle Width="14" Height="10"
                                           VerticalAlignment="Center"
                                           Margin="0,0,4,0">
                                     <Rectangle.Fill>
-                                        <SolidColorBrush Color="Red" Opacity="0.5"/>
+                                        <SolidColorBrush Color="#FFC107" Opacity="0.5"/>
                                     </Rectangle.Fill>
-                                    <Rectangle.OpacityMask>
-                                        <DrawingBrush TileMode="Tile" Viewport="0,0,3,2" ViewportUnits="Absolute">
-                                            <DrawingBrush.Drawing>
-                                                <GeometryDrawing Brush="Red">
-                                                    <GeometryDrawing.Geometry>
-                                                        <RectangleGeometry Rect="0,0,1,2"/>
-                                                    </GeometryDrawing.Geometry>
-                                                </GeometryDrawing>
-                                            </DrawingBrush.Drawing>
-                                        </DrawingBrush>
-                                    </Rectangle.OpacityMask>
                                 </Rectangle>
-                                <TextBlock Text="Avg ± StdDev" 
-                                          FontSize="10" 
-                                          Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                <TextBlock Text="Avg ± StdDev"
+                                          Style="{StaticResource SecondaryTextStyle}"
+                                          VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <!-- P90/P95/P99 optimizer thresholds -->
+                            <StackPanel Orientation="Horizontal">
+                                <Rectangle Width="14" Height="2"
+                                          Fill="#AB47BC"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,4,0"/>
+                                <TextBlock Text="P90/P95/P99"
+                                          Style="{StaticResource SecondaryTextStyle}"
                                           VerticalAlignment="Center"/>
                             </StackPanel>
                         </StackPanel>
@@ -361,11 +647,7 @@
                 </Border>
 
                 <!-- COMPACT Statistics Panel - 2 rows -->
-                <Border Background="{DynamicResource SecondaryBackgroundBrush}" 
-                       BorderBrush="{DynamicResource BorderBrush}" 
-                       BorderThickness="1" 
-                       Padding="15" 
-                       Margin="0,0,0,10">
+                <Border Style="{StaticResource SectionCardStyle}">
                     <StackPanel>
                         <Grid Margin="0,0,0,10">
                             <Grid.RowDefinitions>
@@ -382,15 +664,12 @@
 
                                 <TextBlock Grid.Column="0"
                                           Text="Statistics"
-                                          FontSize="14"
-                                          FontWeight="SemiBold"
-                                          Foreground="{DynamicResource PrimaryBrush}"
+                                          Style="{StaticResource SectionHeaderStyle}"
                                           VerticalAlignment="Center"/>
 
                                 <TextBlock Grid.Column="1"
                                           Text="Keep across sessions"
-                                          FontSize="10"
-                                          Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                          Style="{StaticResource SecondaryTextStyle}"
                                           VerticalAlignment="Center"
                                           Margin="0,0,8,0"/>
 
@@ -399,7 +678,7 @@
                                          VerticalAlignment="Center"
                                          Margin="0,0,5,0"
                                          ToolTip="When enabled, all statistics are saved to disk and restored on the next NINA start, accumulating across sessions"
-                                         Style="{DynamicResource ToggleSwitchStyle}"/>
+                                         Style="{StaticResource ToggleSwitchStyle}"/>
                             </Grid>
 
                             <!-- Statistics profiles: toggle + editable ComboBox + add/delete -->
@@ -414,8 +693,7 @@
 
                                 <TextBlock Grid.Column="0"
                                           Text="Profiles"
-                                          FontSize="10"
-                                          Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                          Style="{StaticResource SecondaryTextStyle}"
                                           VerticalAlignment="Center"
                                           Margin="0,0,8,0"/>
 
@@ -424,7 +702,7 @@
                                          VerticalAlignment="Center"
                                          Margin="0,0,8,0"
                                          ToolTip="Store statistics in separate selectable profiles (e.g. per target or telescope)"
-                                         Style="{DynamicResource ToggleSwitchStyle}"/>
+                                         Style="{StaticResource ToggleSwitchStyle}"/>
 
                                 <ComboBox Grid.Column="2"
                                          Style="{StaticResource ProfileComboBoxStyle}"
@@ -439,84 +717,127 @@
                                          ToolTip="Select a profile, or type a new name and press +"/>
 
                                 <Button Grid.Column="3"
-                                       Content="&#x2795;"
-                                       Style="{StaticResource QualityButton}"
+                                       Style="{StaticResource IconButtonStyle}"
+                                       Tag="{StaticResource IconAddGeometry}"
                                        Command="{Binding CreateProfileCommand}"
                                        Margin="5,0,0,0"
-                                       Padding="6,4"
                                        Visibility="{Binding IsMultiProfileEnabled, Converter={StaticResource BoolToVis}}"
                                        ToolTip="Create the profile typed in the box"/>
 
                                 <Button Grid.Column="4"
-                                       Content="&#x1F5D1;"
-                                       Style="{StaticResource DeleteProfileButton}"
+                                       Style="{StaticResource DeleteIconButtonStyle}"
+                                       Tag="{StaticResource IconDeleteGeometry}"
                                        Command="{Binding DeleteProfileCommand}"
                                        Margin="5,0,0,0"
-                                       Padding="6,4"
                                        Visibility="{Binding IsMultiProfileEnabled, Converter={StaticResource BoolToVis}}"
                                        ToolTip="Delete the selected profile (Default cannot be deleted)"/>
                             </Grid>
                         </Grid>
 
+                        <!-- Statistics tile row (unified onto the Quality/Optimizer tile
+                             language: label / value / caption). Four tiles: Dithers,
+                             Success, Median settle, Drift. -->
                         <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
 
-                            <!-- Row 1: Dithers (full width) -->
-                            <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" 
-                                      Margin="0,0,0,6">
-                                <Run Text="Dithers: " Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                <Run Text="{Binding TotalDithers, Mode=OneWay}" 
-                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
-                                <Run Text="/" Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
-                                <Run Text="{Binding SuccessfulDithers, Mode=OneWay}" 
-                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
-                                <Run Text="/" Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
-                                <Run Text="{Binding SuccessRate, StringFormat='{}{0:F1}%', Mode=OneWay}" 
-                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
-                                <Run Text=" (Total/Success/Rate)" FontSize="11" Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                            </TextBlock>
+                            <!-- Dithers (total) -->
+                            <Border Grid.Column="0"
+                                    Style="{StaticResource MetricTileStyle}"
+                                    Margin="0,0,4,0"
+                                    ToolTip="Total number of dither events recorded in this profile">
+                                <StackPanel>
+                                    <TextBlock Text="Dithers"
+                                              Style="{StaticResource SecondaryTextStyle}"
+                                              HorizontalAlignment="Center"
+                                              Margin="0,0,0,2"/>
+                                    <TextBlock Text="{Binding TotalDithers, Mode=OneWay}"
+                                              Style="{StaticResource MetricValueStyle}"
+                                              HorizontalAlignment="Center"/>
+                                    <TextBlock Text="total"
+                                              Style="{StaticResource SecondaryTextStyle}"
+                                              HorizontalAlignment="Center"
+                                              Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Border>
 
-                            <!-- Row 2, Left: Median -->
-                            <TextBlock Grid.Row="1" Grid.Column="0" 
-                                      Margin="0,0,10,0">
-                                <Run Text="Median: " Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                <Run Text="{Binding MedianSettleTime, StringFormat='{}{0:F2}s', Mode=OneWay}" 
-                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
-                                <Run Text=", (Min: " FontSize="11" Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                <Run Text="{Binding MinSettleTime, StringFormat='{}{0:F2}s', Mode=OneWay}" 
-                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold" FontSize="11"/>
-                                <Run Text=" / Max: " FontSize="11" Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                <Run Text="{Binding MaxSettleTime, StringFormat='{}{0:F2}s', Mode=OneWay}" 
-                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold" FontSize="11"/>
-                                <Run Text=")" FontSize="11" Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                            </TextBlock>
+                            <!-- Success (rate + "n of m") -->
+                            <Border Grid.Column="1"
+                                    Style="{StaticResource MetricTileStyle}"
+                                    Margin="0,0,4,0"
+                                    ToolTip="Share of dithers that completed successfully (excludes failed / star-lost dithers)">
+                                <StackPanel>
+                                    <TextBlock Text="Success"
+                                              Style="{StaticResource SecondaryTextStyle}"
+                                              HorizontalAlignment="Center"
+                                              Margin="0,0,0,2"/>
+                                    <TextBlock Text="{Binding SuccessRate, StringFormat='{}{0:F1}%', Mode=OneWay}"
+                                              Style="{StaticResource MetricValueStyle}"
+                                              HorizontalAlignment="Center"/>
+                                    <TextBlock Style="{StaticResource SecondaryTextStyle}"
+                                              HorizontalAlignment="Center"
+                                              Margin="0,2,0,0">
+                                        <Run Text="{Binding SuccessfulDithers, Mode=OneWay}"/>
+                                        <Run Text=" of "/>
+                                        <Run Text="{Binding TotalDithers, Mode=OneWay}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
 
-                            <!-- Row 2, Right: Drift -->
-                            <TextBlock Grid.Row="1" Grid.Column="1">
-                                <Run Text="Drift: X: " Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                <Run Text="{Binding TotalDriftX, StringFormat='{}{0:F2}px', Mode=OneWay}" 
-                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
-                                <Run Text=" / Y: " Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                <Run Text="{Binding TotalDriftY, StringFormat='{}{0:F2}px', Mode=OneWay}" 
-                                     Foreground="{DynamicResource PrimaryBrush}" FontWeight="Bold"/>
-                            </TextBlock>
+                            <!-- Median settle (min–max) -->
+                            <Border Grid.Column="2"
+                                    Style="{StaticResource MetricTileStyle}"
+                                    Margin="0,0,4,0"
+                                    ToolTip="Median settle time; caption shows the observed min–max range">
+                                <StackPanel>
+                                    <TextBlock Text="Median Settle"
+                                              Style="{StaticResource SecondaryTextStyle}"
+                                              HorizontalAlignment="Center"
+                                              Margin="0,0,0,2"/>
+                                    <TextBlock Text="{Binding MedianSettleTime, StringFormat='{}{0:F2}s', Mode=OneWay}"
+                                              Style="{StaticResource MetricValueStyle}"
+                                              HorizontalAlignment="Center"/>
+                                    <TextBlock Style="{StaticResource SecondaryTextStyle}"
+                                              HorizontalAlignment="Center"
+                                              Margin="0,2,0,0">
+                                        <Run Text="{Binding MinSettleTime, StringFormat='{}{0:F2}', Mode=OneWay}"/>
+                                        <Run Text=" – "/>
+                                        <Run Text="{Binding MaxSettleTime, StringFormat='{}{0:F2}s', Mode=OneWay}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Drift (X / Y range) -->
+                            <Border Grid.Column="3"
+                                    Style="{StaticResource MetricTileStyle}"
+                                    ToolTip="Range of the dither distribution along each axis (guide-camera pixels)">
+                                <StackPanel>
+                                    <TextBlock Text="Drift"
+                                              Style="{StaticResource SecondaryTextStyle}"
+                                              HorizontalAlignment="Center"
+                                              Margin="0,0,0,2"/>
+                                    <TextBlock Style="{StaticResource MetricValueStyle}"
+                                              HorizontalAlignment="Center">
+                                        <Run Text="{Binding TotalDriftX, StringFormat='{}{0:F2}', Mode=OneWay}"/>
+                                        <Run Text=" / "/>
+                                        <Run Text="{Binding TotalDriftY, StringFormat='{}{0:F2}', Mode=OneWay}"/>
+                                    </TextBlock>
+                                    <TextBlock Text="X / Y px"
+                                              Style="{StaticResource SecondaryTextStyle}"
+                                              HorizontalAlignment="Center"
+                                              Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Border>
                         </Grid>
                     </StackPanel>
                 </Border>
 
                 <!-- Quality Metrics Panel - Shown when enough data -->
-                <Border Background="{DynamicResource SecondaryBackgroundBrush}" 
-                       BorderBrush="{DynamicResource BorderBrush}" 
-                       BorderThickness="1" 
-                       Padding="15" 
-                       Margin="0,0,0,10"
+                <Border Style="{StaticResource SectionCardStyle}"
                        Visibility="{Binding ShowQualityAssessment, Converter={StaticResource BoolToVis}, Mode=OneWay}">
                     <StackPanel>
                         <!-- Header with Overall Rating and EXPERIMENTAL Badge -->
@@ -529,42 +850,32 @@
 
                             <!-- Title with Experimental Badge -->
                             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="📊 Dither Quality Assessment"
-                                          FontSize="14"
-                                          FontWeight="Bold"
-                                          Foreground="{DynamicResource PrimaryBrush}"
+                                <TextBlock Text="Dither Quality Assessment"
+                                          Style="{StaticResource SectionHeaderStyle}"
                                           VerticalAlignment="Center"
                                           Margin="0,0,8,0"/>
 
                                 <!-- EXPERIMENTAL Badge -->
-                                <Border Background="#D32F2F"
-                                        CornerRadius="3"
-                                        Padding="6,2"
-                                        VerticalAlignment="Center">
+                                <Border Style="{StaticResource ExperimentalBadgeStyle}">
                                     <TextBlock Text="EXPERIMENTAL"
-                                              FontSize="9"
+                                              Style="{StaticResource CaptionTextStyle}"
                                               FontWeight="Bold"
-                                              Foreground="White"
                                               VerticalAlignment="Center"/>
                                 </Border>
                             </StackPanel>
 
                             <!-- Overall Rating Badge -->
                             <Border Grid.Column="1"
-                                    CornerRadius="10"
-                                    Padding="10,4"
+                                    Style="{StaticResource RatingBadgeStyle}"
                                     Margin="0,0,8,0">
-                                <Border.Background>
-                                    <SolidColorBrush Color="{Binding QualityRatingColor, Mode=OneWay}"/>
-                                </Border.Background>
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="{Binding QualityResult.QualityRating, Mode=OneWay}"
                                               FontWeight="Bold"
-                                              FontSize="12"
+                                              FontSize="11"
                                               Foreground="White"
                                               Margin="0,0,6,0"/>
                                     <TextBlock Text="{Binding CombinedScoreValue, Mode=OneWay}"
-                                              FontSize="12"
+                                              FontSize="11"
                                               Foreground="White"
                                               Opacity="0.9"/>
                                 </StackPanel>
@@ -576,7 +887,7 @@
                                      VerticalAlignment="Center"
                                      Margin="0,0,5,0"
                                      ToolTip="Enable/Disable Quality Assessment"
-                                     Style="{DynamicResource ToggleSwitchStyle}"/>
+                                     Style="{StaticResource ToggleSwitchStyle}"/>
                         </Grid>
 
                         <!-- Primary Metrics Grid -->
@@ -589,25 +900,19 @@
 
                             <!-- Centered L2 Discrepancy -->
                             <Border Grid.Column="0"
-                                    Background="{DynamicResource TertiaryBackgroundBrush}"
-                                    BorderBrush="{DynamicResource BorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="3"
-                                    Padding="8"
-                                    Margin="0,0,4,0">
+                                    Style="{StaticResource MetricTileStyle}"
+                                    Margin="0,0,4,0"
+                                    ToolTip="Centered L₂ Discrepancy — how uniformly the sub-pixel dither offsets fill the sampling space. Lower is better (more even coverage).">
                                 <StackPanel>
-                                    <TextBlock Text="CD*"
-                                              FontSize="9"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                    <TextBlock Text="CD* · Uniformity"
+                                              Style="{StaticResource SecondaryTextStyle}"
+                                              HorizontalAlignment="Center"
                                               Margin="0,0,0,2"/>
                                     <TextBlock Text="{Binding CDValue, Mode=OneWay}"
-                                              FontSize="14"
-                                              FontWeight="Bold"
-                                              Foreground="{DynamicResource PrimaryBrush}"
+                                              Style="{StaticResource MetricValueStyle}"
                                               HorizontalAlignment="Center"/>
                                     <TextBlock Text="{Binding CDRating, Mode=OneWay}"
-                                              FontSize="10"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                              Style="{StaticResource SecondaryTextStyle}"
                                               HorizontalAlignment="Center"
                                               Margin="0,2,0,0"/>
                                 </StackPanel>
@@ -615,26 +920,19 @@
 
                             <!-- Drift Ratio (walking noise indicator) -->
                             <Border Grid.Column="1"
-                                    Background="{DynamicResource TertiaryBackgroundBrush}"
-                                    BorderBrush="{DynamicResource BorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="3"
-                                    Padding="8"
+                                    Style="{StaticResource MetricTileStyle}"
                                     Margin="0,0,4,0"
                                     ToolTip="Drift ratio: net displacement / total path length. 0 = pattern returns to origin, 1 = one-directional drift (walking noise risk)">
                                 <StackPanel>
-                                    <TextBlock Text="Drift*"
-                                              FontSize="9"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                    <TextBlock Text="Drift* · Walking noise"
+                                              Style="{StaticResource SecondaryTextStyle}"
+                                              HorizontalAlignment="Center"
                                               Margin="0,0,0,2"/>
                                     <TextBlock Text="{Binding DriftValue, Mode=OneWay}"
-                                              FontSize="14"
-                                              FontWeight="Bold"
-                                              Foreground="{DynamicResource PrimaryBrush}"
+                                              Style="{StaticResource MetricValueStyle}"
                                               HorizontalAlignment="Center"/>
                                     <TextBlock Text="{Binding DriftRating, Mode=OneWay}"
-                                              FontSize="10"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                              Style="{StaticResource SecondaryTextStyle}"
                                               HorizontalAlignment="Center"
                                               Margin="0,2,0,0"/>
                                 </StackPanel>
@@ -642,24 +940,18 @@
 
                             <!-- NNI -->
                             <Border Grid.Column="2"
-                                    Background="{DynamicResource TertiaryBackgroundBrush}"
-                                    BorderBrush="{DynamicResource BorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="3"
-                                    Padding="8">
+                                    Style="{StaticResource MetricTileStyle}"
+                                    ToolTip="Nearest Neighbour Index — spacing regularity of the dither points. ≈1 random (ideal spread), &lt;1 clustered, &gt;1 over-regular grid.">
                                 <StackPanel>
-                                    <TextBlock Text="NNI*"
-                                              FontSize="9"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                    <TextBlock Text="NNI* · Spacing"
+                                              Style="{StaticResource SecondaryTextStyle}"
+                                              HorizontalAlignment="Center"
                                               Margin="0,0,0,2"/>
                                     <TextBlock Text="{Binding NNIValue, Mode=OneWay}"
-                                              FontSize="14"
-                                              FontWeight="Bold"
-                                              Foreground="{DynamicResource PrimaryBrush}"
+                                              Style="{StaticResource MetricValueStyle}"
                                               HorizontalAlignment="Center"/>
                                     <TextBlock Text="{Binding NNIRating, Mode=OneWay}"
-                                              FontSize="10"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                              Style="{StaticResource SecondaryTextStyle}"
                                               HorizontalAlignment="Center"
                                               Margin="0,2,0,0"/>
                                 </StackPanel>
@@ -668,10 +960,9 @@
 
                         <!-- Drizzle Gap-Fill Metrics -->
                         <StackPanel Margin="0,0,0,10">
-                            <TextBlock Text="🔬 Drizzle Coverage Uniformity (min/mean weight per output pixel)"
-                                      FontSize="10"
+                            <TextBlock Text="Drizzle Coverage Uniformity (min/mean weight per output pixel)"
+                                      Style="{StaticResource SecondaryTextStyle}"
                                       FontWeight="SemiBold"
-                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                       Margin="0,0,0,6"/>
 
                             <Grid>
@@ -683,26 +974,18 @@
 
                                 <!-- 1x Drizzle -->
                                 <Border Grid.Column="0"
-                                        Background="{DynamicResource TertiaryBackgroundBrush}"
-                                        BorderBrush="{DynamicResource BorderBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="3"
-                                        Padding="8"
+                                        Style="{StaticResource MetricTileStyle}"
                                         Margin="0,0,4,0">
                                     <StackPanel>
                                         <TextBlock Text="1× Drizzle"
-                                                  FontSize="9"
-                                                  Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                                  Style="{StaticResource SecondaryTextStyle}"
                                                   HorizontalAlignment="Center"
                                                   Margin="0,0,0,2"/>
                                         <TextBlock Text="{Binding GFM1xValue, Mode=OneWay}"
-                                                  FontSize="13"
-                                                  FontWeight="Bold"
-                                                  Foreground="{DynamicResource PrimaryBrush}"
+                                                  Style="{StaticResource MetricValueStyle}"
                                                   HorizontalAlignment="Center"/>
                                         <TextBlock Text="{Binding GFM1xTarget, Mode=OneWay}"
-                                                  FontSize="9"
-                                                  Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                                  Style="{StaticResource SecondaryTextStyle}"
                                                   HorizontalAlignment="Center"
                                                   Margin="0,2,0,0"/>
                                     </StackPanel>
@@ -710,26 +993,18 @@
 
                                 <!-- 2x Drizzle -->
                                 <Border Grid.Column="1"
-                                        Background="{DynamicResource TertiaryBackgroundBrush}"
-                                        BorderBrush="{DynamicResource BorderBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="3"
-                                        Padding="8"
+                                        Style="{StaticResource MetricTileStyle}"
                                         Margin="0,0,4,0">
                                     <StackPanel>
                                         <TextBlock Text="2× Drizzle"
-                                                  FontSize="9"
-                                                  Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                                  Style="{StaticResource SecondaryTextStyle}"
                                                   HorizontalAlignment="Center"
                                                   Margin="0,0,0,2"/>
                                         <TextBlock Text="{Binding GFM2xValue, Mode=OneWay}"
-                                                  FontSize="13"
-                                                  FontWeight="Bold"
-                                                  Foreground="{DynamicResource PrimaryBrush}"
+                                                  Style="{StaticResource MetricValueStyle}"
                                                   HorizontalAlignment="Center"/>
                                         <TextBlock Text="{Binding GFM2xTarget, Mode=OneWay}"
-                                                  FontSize="9"
-                                                  Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                                  Style="{StaticResource SecondaryTextStyle}"
                                                   HorizontalAlignment="Center"
                                                   Margin="0,2,0,0"/>
                                     </StackPanel>
@@ -737,25 +1012,17 @@
 
                                 <!-- 3x Drizzle -->
                                 <Border Grid.Column="2"
-                                        Background="{DynamicResource TertiaryBackgroundBrush}"
-                                        BorderBrush="{DynamicResource BorderBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="3"
-                                        Padding="8">
+                                        Style="{StaticResource MetricTileStyle}">
                                     <StackPanel>
                                         <TextBlock Text="3× Drizzle"
-                                                  FontSize="9"
-                                                  Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                                  Style="{StaticResource SecondaryTextStyle}"
                                                   HorizontalAlignment="Center"
                                                   Margin="0,0,0,2"/>
                                         <TextBlock Text="{Binding GFM3xValue, Mode=OneWay}"
-                                                  FontSize="13"
-                                                  FontWeight="Bold"
-                                                  Foreground="{DynamicResource PrimaryBrush}"
+                                                  Style="{StaticResource MetricValueStyle}"
                                                   HorizontalAlignment="Center"/>
                                         <TextBlock Text="{Binding GFM3xTarget, Mode=OneWay}"
-                                                  FontSize="9"
-                                                  Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                                  Style="{StaticResource SecondaryTextStyle}"
                                                   HorizontalAlignment="Center"
                                                   Margin="0,2,0,0"/>
                                     </StackPanel>
@@ -764,57 +1031,31 @@
                         </StackPanel>
 
                         <!-- Recommendation -->
-                        <Border Background="{DynamicResource TertiaryBackgroundBrush}"
-                                BorderBrush="{DynamicResource BorderBrush}"
-                                BorderThickness="1"
-                                CornerRadius="3"
+                        <Border Style="{StaticResource MetricTileStyle}"
                                 Padding="10"
                                 Margin="0,0,0,10">
                             <StackPanel>
-                                <TextBlock Text="💡 Recommendation"
-                                          FontSize="10"
+                                <TextBlock Text="Recommendation"
+                                          Style="{StaticResource SecondaryTextStyle}"
                                           FontWeight="SemiBold"
-                                          Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
                                           Margin="0,0,0,4"/>
                                 <TextBlock Text="{Binding QualityResult.Recommendation, Mode=OneWay}"
-                                          FontSize="10"
+                                          Style="{StaticResource CaptionTextStyle}"
                                           TextWrapping="Wrap"
-                                          Foreground="{DynamicResource PrimaryBrush}"
                                           LineHeight="14"/>
                             </StackPanel>
                         </Border>
 
-                        <!-- Metric Settings (pixfrac, pixel scale conversion) -->
-                        <StackPanel Orientation="Horizontal" Margin="2,0,0,8">
-                            <TextBlock Text="pixfrac:"
-                                      FontSize="9"
-                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                      VerticalAlignment="Center"
-                                      Margin="0,0,4,0"/>
-                            <TextBox Text="{Binding QualityPixfrac, StringFormat=F2}"
-                                     Width="36"
-                                     FontSize="9"
-                                     VerticalAlignment="Center"
-                                     Margin="0,0,10,0"
-                                     ToolTip="Drizzle pixfrac used for the coverage simulation (0-1, default 0.6)"/>
-                            <TextBlock Text="px ratio (0 = auto):"
-                                      FontSize="9"
-                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                      VerticalAlignment="Center"
-                                      Margin="0,0,4,0"/>
-                            <TextBox Text="{Binding PixelScaleRatioOverride, StringFormat=F2}"
-                                     Width="36"
-                                     FontSize="9"
-                                     VerticalAlignment="Center"
-                                     Margin="0,0,10,0"
-                                     ToolTip="Main-camera pixels per guide-camera pixel. 0 = derive automatically from PHD2 pixel scale and the NINA profile (camera pixel size / focal length)"/>
-                            <TextBlock Text="{Binding EffectiveScaleRatioText, Mode=OneWay}"
-                                      FontSize="9"
-                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                      VerticalAlignment="Center"/>
-                        </StackPanel>
+                        <!-- Derived scale-ratio context for the px-ratio parameter below. -->
+                        <TextBlock Text="{Binding EffectiveScaleRatioText, Mode=OneWay}"
+                                  Style="{StaticResource SecondaryTextStyle}"
+                                  TextWrapping="Wrap"
+                                  Margin="2,0,0,8"/>
 
-                        <!-- Action Buttons -->
+                        <!-- Bottom row: sample-size note on the left; the pixfrac / px-ratio
+                             parameters and the Recalc / Export Report actions grouped on the
+                             right (these inputs are settings, not data, so they live with the
+                             buttons rather than in the metrics area). -->
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -826,40 +1067,63 @@
                                       Margin="2,0,0,0">
                                 <Run Text="Based on"
                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                     FontSize="9"
+                                     FontSize="10"
                                      FontWeight="SemiBold"/>
                                 <Run Text=" "/>
                                 <Run Text="{Binding QualityResult.TotalDithers, StringFormat='{}{0} dithers', Mode=OneWay}"
                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                     FontSize="9"
+                                     FontSize="10"
                                      FontWeight="SemiBold"/>
                             </TextBlock>
 
                             <StackPanel Grid.Column="1"
-                                       Orientation="Horizontal">
-                                <Button Content="🔄 Recalc"
+                                       Orientation="Horizontal"
+                                       VerticalAlignment="Center">
+                                <!-- Parameters -->
+                                <TextBlock Text="pixfrac"
+                                          Style="{StaticResource SecondaryTextStyle}"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,4,0"/>
+                                <TextBox Text="{Binding QualityPixfrac, StringFormat=F2}"
+                                         Width="36"
+                                         FontSize="10"
+                                         VerticalAlignment="Center"
+                                         Margin="0,0,10,0"
+                                         ToolTip="Drizzle pixfrac used for the coverage simulation (0-1, default 0.6)"/>
+                                <TextBlock Text="px ratio"
+                                          Style="{StaticResource SecondaryTextStyle}"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,4,0"/>
+                                <TextBox Text="{Binding PixelScaleRatioOverride, StringFormat=F2}"
+                                         Width="36"
+                                         FontSize="10"
+                                         VerticalAlignment="Center"
+                                         Margin="0,0,12,0"
+                                         ToolTip="Main-camera pixels per guide-camera pixel. 0 = derive automatically from PHD2 pixel scale and the NINA profile (camera pixel size / focal length)"/>
+
+                                <!-- Actions -->
+                                <Button Content="Recalc"
+                                        Tag="{StaticResource IconRefreshGeometry}"
                                         Command="{Binding RecalculateMetricsCommand}"
-                                        Style="{StaticResource QualityButton}"
+                                        Style="{StaticResource IconTextButtonStyle}"
                                         Margin="0,0,4,0"
                                         ToolTip="Recalculate quality metrics"/>
 
-                                <Button Content="💾 Export"
+                                <Button Content="Export Report"
+                                        Tag="{StaticResource IconExportGeometry}"
                                         Command="{Binding ExportMetricsCommand}"
-                                        Style="{StaticResource QualityButton}"
+                                        Style="{StaticResource IconTextButtonStyle}"
                                         ToolTip="Export detailed report (TXT)"/>
                             </StackPanel>
                         </Grid>
                     </StackPanel>
                 </Border>
 
-                <!-- Info Box when Quality Assessment is disabled or not enough dithers -->
-                <Border Background="{DynamicResource SecondaryBackgroundBrush}"
-                       BorderBrush="{DynamicResource BorderBrush}"
-                       BorderThickness="1"
-                       Padding="20"
-                       Margin="0,0,0,10">
+                <!-- Info Box when Quality Assessment is disabled or not enough dithers.
+                     Shares SectionStatusCardTemplate with the Optimizer info box. -->
+                <Border>
                     <Border.Style>
-                        <Style TargetType="Border">
+                        <Style TargetType="Border" BasedOn="{StaticResource SectionCardStyle}">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
                                 <!-- Show when Quality Assessment is disabled OR when enabled but not enough data -->
@@ -869,61 +1133,12 @@
                             </Style.Triggers>
                         </Style>
                     </Border.Style>
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-
-                        <!-- Content (centered) -->
-                        <StackPanel Grid.Row="0" Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <TextBlock Text="📊"
-                                      FontSize="20"
-                                      HorizontalAlignment="Center"
-                                      Margin="0,0,0,8"/>
-                            <TextBlock Text="Quality Assessment"
-                                      FontSize="12"
-                                      FontWeight="SemiBold"
-                                      HorizontalAlignment="Center"
-                                      Foreground="{DynamicResource PrimaryBrush}"
-                                      Margin="0,0,0,4"/>
-                            <!-- Show different text based on state -->
-                            <TextBlock FontSize="10"
-                                      HorizontalAlignment="Center"
-                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Text" Value="Requires at least 4 dither events"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding ShowQualityDisabledMessage, Mode=OneWay}" Value="True">
-                                                <Setter Property="Text" Value="Quality Assessment disabled"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                        </StackPanel>
-
-                        <!-- Toggle Button at top right -->
-                        <CheckBox Grid.Row="0" Grid.Column="1"
-                                 IsChecked="{Binding IsQualityAssessmentEnabled, Mode=TwoWay}"
-                                 HorizontalAlignment="Right"
-                                 VerticalAlignment="Top"
-                                 Margin="0,0,5,0"
-                                 ToolTip="Enable/Disable Quality Assessment"
-                                 Style="{DynamicResource ToggleSwitchStyle}"/>
-                    </Grid>
+                    <ContentControl Content="{Binding QualityStatus}"
+                                    ContentTemplate="{StaticResource SectionStatusCardTemplate}"/>
                 </Border>
 
                 <!-- Dither Settings Optimizer Panel - Shown when enabled and enough data -->
-                <Border Background="{DynamicResource SecondaryBackgroundBrush}"
-                       BorderBrush="{DynamicResource BorderBrush}"
-                       BorderThickness="1"
-                       Padding="15"
-                       Margin="0,0,0,10"
+                <Border Style="{StaticResource SectionCardStyle}"
                        Visibility="{Binding ShowDitherOptimizer, Converter={StaticResource BoolToVis}, Mode=OneWay}">
                     <StackPanel>
                         <!-- Header with EXPERIMENTAL Badge and Toggle -->
@@ -935,19 +1150,13 @@
 
                             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="Dither Settings Optimizer"
-                                          FontSize="14"
-                                          FontWeight="Bold"
-                                          Foreground="{DynamicResource PrimaryBrush}"
+                                          Style="{StaticResource SectionHeaderStyle}"
                                           VerticalAlignment="Center"
                                           Margin="0,0,8,0"/>
-                                <Border Background="#D32F2F"
-                                        CornerRadius="3"
-                                        Padding="6,2"
-                                        VerticalAlignment="Center">
+                                <Border Style="{StaticResource ExperimentalBadgeStyle}">
                                     <TextBlock Text="EXPERIMENTAL"
-                                              FontSize="9"
+                                              Style="{StaticResource CaptionTextStyle}"
                                               FontWeight="Bold"
-                                              Foreground="White"
                                               VerticalAlignment="Center"/>
                                 </Border>
                             </StackPanel>
@@ -957,270 +1166,28 @@
                                      VerticalAlignment="Center"
                                      Margin="0,0,5,0"
                                      ToolTip="Enable/Disable Dither Settings Optimizer"
-                                     Style="{DynamicResource ToggleSwitchStyle}"/>
+                                     Style="{StaticResource ToggleSwitchStyle}"/>
                         </Grid>
 
-                        <!-- 3 Profile Columns: Strict (P90) / Standard (P95) / Fast (P99) -->
-                        <Grid Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-
-                            <!-- Strict Profile (P90) -->
-                            <Border Grid.Column="0"
-                                    Background="{DynamicResource TertiaryBackgroundBrush}"
-                                    BorderBrush="{DynamicResource BorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="3"
-                                    Padding="8"
-                                    Margin="0,0,4,0"
-                                    ToolTip="Strict: waits until guiding is well inside its normal range. Highest confidence, longest settling — does NOT improve image quality.">
-                                <StackPanel>
-                                    <!-- Profile Header -->
-                                    <TextBlock Text="Strict"
-                                              FontSize="11"
-                                              FontWeight="Bold"
-                                              Foreground="{DynamicResource PrimaryBrush}"
-                                              HorizontalAlignment="Center"
-                                              Margin="0,0,0,2"/>
-                                    <TextBlock Text="P90  /  slow"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              Margin="0,0,0,8"/>
-
-                                    <!-- Settle Tolerance -->
-                                    <TextBlock Text="Settle Pixel"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              ToolTip="Distance from lock position PHD2 waits for after a dither (guide camera pixels)"/>
-                                    <TextBlock HorizontalAlignment="Center">
-                                        <Run Text="{Binding SettlePixelQuality, Mode=OneWay}"
-                                             FontSize="15" FontWeight="Bold"
-                                             Foreground="{DynamicResource PrimaryBrush}"/>
-                                        <Run Text=" px" FontSize="9"
-                                             Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                    </TextBlock>
-                                    <TextBlock Text="{Binding SettleArcsecQuality, Mode=OneWay}"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              Margin="0,0,0,6"/>
-
-                                    <!-- Separator -->
-                                    <Border BorderBrush="{DynamicResource BorderBrush}"
-                                            BorderThickness="0,1,0,0"
-                                            Margin="4,0,4,6"/>
-
-                                    <!-- Expected Settle Duration -->
-                                    <TextBlock Text="Expected Settle"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              ToolTip="Median time from dither until guiding stayed below this tolerance — for information, do NOT enter as min settle time"/>
-                                    <TextBlock HorizontalAlignment="Center" Margin="0,0,0,6">
-                                        <Run Text="{Binding ExpectedSettleQuality, Mode=OneWay}"
-                                             FontSize="15" FontWeight="Bold"
-                                             Foreground="{DynamicResource PrimaryBrush}"/>
-                                        <Run Text=" s" FontSize="9"
-                                             Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                    </TextBlock>
-
-                                    <!-- Separator -->
-                                    <Border BorderBrush="{DynamicResource BorderBrush}"
-                                            BorderThickness="0,1,0,0"
-                                            Margin="4,0,4,6"/>
-
-                                    <!-- Settle Timeout -->
-                                    <TextBlock Text="Settle Timeout"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              ToolTip="Suggested settle timeout: covers 95% of observed settle delays plus margin"/>
-                                    <TextBlock HorizontalAlignment="Center">
-                                        <Run Text="{Binding SettleTimeoutQuality, Mode=OneWay}"
-                                             FontSize="15" FontWeight="Bold"
-                                             Foreground="{DynamicResource PrimaryBrush}"/>
-                                        <Run Text=" s" FontSize="9"
-                                             Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                    </TextBlock>
-                                </StackPanel>
-                            </Border>
-
-                            <!-- Standard Profile (P95) -->
-                            <Border Grid.Column="1"
-                                    Background="{DynamicResource TertiaryBackgroundBrush}"
-                                    BorderBrush="{DynamicResource BorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="3"
-                                    Padding="8"
-                                    Margin="0,0,4,0"
-                                    ToolTip="Standard: good confidence that guiding is back to normal with moderate settle times.">
-                                <StackPanel>
-                                    <!-- Profile Header -->
-                                    <TextBlock Text="Standard"
-                                              FontSize="11"
-                                              FontWeight="Bold"
-                                              Foreground="{DynamicResource PrimaryBrush}"
-                                              HorizontalAlignment="Center"
-                                              Margin="0,0,0,2"/>
-                                    <TextBlock Text="P95  /  balanced"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              Margin="0,0,0,8"/>
-
-                                    <!-- Settle Tolerance -->
-                                    <TextBlock Text="Settle Pixel"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              ToolTip="Distance from lock position PHD2 waits for after a dither (guide camera pixels)"/>
-                                    <TextBlock HorizontalAlignment="Center">
-                                        <Run Text="{Binding SettlePixelBalanced, Mode=OneWay}"
-                                             FontSize="15" FontWeight="Bold"
-                                             Foreground="{DynamicResource PrimaryBrush}"/>
-                                        <Run Text=" px" FontSize="9"
-                                             Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                    </TextBlock>
-                                    <TextBlock Text="{Binding SettleArcsecBalanced, Mode=OneWay}"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              Margin="0,0,0,6"/>
-
-                                    <!-- Separator -->
-                                    <Border BorderBrush="{DynamicResource BorderBrush}"
-                                            BorderThickness="0,1,0,0"
-                                            Margin="4,0,4,6"/>
-
-                                    <!-- Expected Settle Duration -->
-                                    <TextBlock Text="Expected Settle"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              ToolTip="Median time from dither until guiding stayed below this tolerance — for information, do NOT enter as min settle time"/>
-                                    <TextBlock HorizontalAlignment="Center" Margin="0,0,0,6">
-                                        <Run Text="{Binding ExpectedSettleBalanced, Mode=OneWay}"
-                                             FontSize="15" FontWeight="Bold"
-                                             Foreground="{DynamicResource PrimaryBrush}"/>
-                                        <Run Text=" s" FontSize="9"
-                                             Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                    </TextBlock>
-
-                                    <!-- Separator -->
-                                    <Border BorderBrush="{DynamicResource BorderBrush}"
-                                            BorderThickness="0,1,0,0"
-                                            Margin="4,0,4,6"/>
-
-                                    <!-- Settle Timeout -->
-                                    <TextBlock Text="Settle Timeout"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              ToolTip="Suggested settle timeout: covers 95% of observed settle delays plus margin"/>
-                                    <TextBlock HorizontalAlignment="Center">
-                                        <Run Text="{Binding SettleTimeoutBalanced, Mode=OneWay}"
-                                             FontSize="15" FontWeight="Bold"
-                                             Foreground="{DynamicResource PrimaryBrush}"/>
-                                        <Run Text=" s" FontSize="9"
-                                             Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                    </TextBlock>
-                                </StackPanel>
-                            </Border>
-
-                            <!-- Fast Profile (P99) -->
-                            <Border Grid.Column="2"
-                                    Background="{DynamicResource TertiaryBackgroundBrush}"
-                                    BorderBrush="{DynamicResource BorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="3"
-                                    Padding="8"
-                                    ToolTip="Fast: tolerance safely above the normal guiding scatter — settles quickly and rarely restarts. Recommended for most setups.">
-                                <StackPanel>
-                                    <!-- Profile Header -->
-                                    <TextBlock Text="Fast"
-                                              FontSize="11"
-                                              FontWeight="Bold"
-                                              Foreground="{DynamicResource PrimaryBrush}"
-                                              HorizontalAlignment="Center"
-                                              Margin="0,0,0,2"/>
-                                    <TextBlock Text="P99  /  recommended"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              Margin="0,0,0,8"/>
-
-                                    <!-- Settle Tolerance -->
-                                    <TextBlock Text="Settle Pixel"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              ToolTip="Distance from lock position PHD2 waits for after a dither (guide camera pixels)"/>
-                                    <TextBlock HorizontalAlignment="Center">
-                                        <Run Text="{Binding SettlePixelPerformance, Mode=OneWay}"
-                                             FontSize="15" FontWeight="Bold"
-                                             Foreground="{DynamicResource PrimaryBrush}"/>
-                                        <Run Text=" px" FontSize="9"
-                                             Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                    </TextBlock>
-                                    <TextBlock Text="{Binding SettleArcsecPerformance, Mode=OneWay}"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              Margin="0,0,0,6"/>
-
-                                    <!-- Separator -->
-                                    <Border BorderBrush="{DynamicResource BorderBrush}"
-                                            BorderThickness="0,1,0,0"
-                                            Margin="4,0,4,6"/>
-
-                                    <!-- Expected Settle Duration -->
-                                    <TextBlock Text="Expected Settle"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              ToolTip="Median time from dither until guiding stayed below this tolerance — for information, do NOT enter as min settle time"/>
-                                    <TextBlock HorizontalAlignment="Center" Margin="0,0,0,6">
-                                        <Run Text="{Binding ExpectedSettlePerformance, Mode=OneWay}"
-                                             FontSize="15" FontWeight="Bold"
-                                             Foreground="{DynamicResource PrimaryBrush}"/>
-                                        <Run Text=" s" FontSize="9"
-                                             Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                    </TextBlock>
-
-                                    <!-- Separator -->
-                                    <Border BorderBrush="{DynamicResource BorderBrush}"
-                                            BorderThickness="0,1,0,0"
-                                            Margin="4,0,4,6"/>
-
-                                    <!-- Settle Timeout -->
-                                    <TextBlock Text="Settle Timeout"
-                                              FontSize="8"
-                                              Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
-                                              HorizontalAlignment="Center"
-                                              ToolTip="Suggested settle timeout: covers 95% of observed settle delays plus margin"/>
-                                    <TextBlock HorizontalAlignment="Center">
-                                        <Run Text="{Binding SettleTimeoutPerformance, Mode=OneWay}"
-                                             FontSize="15" FontWeight="Bold"
-                                             Foreground="{DynamicResource PrimaryBrush}"/>
-                                        <Run Text=" s" FontSize="9"
-                                             Foreground="{DynamicResource ButtonForegroundDisabledBrush}"/>
-                                    </TextBlock>
-                                </StackPanel>
-                            </Border>
-                        </Grid>
+                        <!-- Strict (P90) / Standard (P95) / Fast (P99) rendered from a
+                             single template over the OptimizerProfiles collection; the
+                             Fast column carries the accent border (Step 6). -->
+                        <ItemsControl ItemsSource="{Binding OptimizerProfiles}"
+                                      ItemTemplate="{StaticResource OptimizerProfileTemplate}"
+                                      Margin="0,0,0,10">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="3"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
 
                         <!-- Footer info -->
                         <TextBlock Text="{Binding RecommendationInfo, Mode=OneWay}"
-                                  FontSize="9"
-                                  Foreground="{DynamicResource ButtonForegroundDisabledBrush}"
+                                  Style="{StaticResource SecondaryTextStyle}"
                                   HorizontalAlignment="Center"/>
                         <TextBlock Text="{Binding RecommendationWarning, Mode=OneWay}"
-                                  FontSize="9"
+                                  FontSize="10"
                                   Foreground="Orange"
                                   TextWrapping="Wrap"
                                   HorizontalAlignment="Center"
@@ -1229,14 +1196,11 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Info Box when Dither Optimizer is disabled or not enough data -->
-                <Border Background="{DynamicResource SecondaryBackgroundBrush}"
-                       BorderBrush="{DynamicResource BorderBrush}"
-                       BorderThickness="1"
-                       Padding="20"
-                       Margin="0,0,0,10">
+                <!-- Info Box when Dither Optimizer is disabled or not enough data.
+                     Shares SectionStatusCardTemplate with the Quality info box. -->
+                <Border>
                     <Border.Style>
-                        <Style TargetType="Border">
+                        <Style TargetType="Border" BasedOn="{StaticResource SectionCardStyle}">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding ShowDitherOptimizer, Mode=OneWay}" Value="False">
@@ -1245,70 +1209,26 @@
                             </Style.Triggers>
                         </Style>
                     </Border.Style>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-
-                        <StackPanel Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <TextBlock Text="Dither Settings Optimizer"
-                                      FontSize="12"
-                                      FontWeight="SemiBold"
-                                      HorizontalAlignment="Center"
-                                      Foreground="{DynamicResource PrimaryBrush}"
-                                      Margin="0,0,0,4"/>
-                            <TextBlock FontSize="10"
-                                      HorizontalAlignment="Center"
-                                      Foreground="{DynamicResource ButtonForegroundDisabledBrush}">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Text" Value="Requires at least 3 dither events"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding ShowDitherOptimizerDisabledMessage, Mode=OneWay}" Value="True">
-                                                <Setter Property="Text" Value="Dither Settings Optimizer disabled"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                        </StackPanel>
-
-                        <CheckBox Grid.Column="1"
-                                 IsChecked="{Binding IsDitherOptimizerEnabled, Mode=TwoWay}"
-                                 HorizontalAlignment="Right"
-                                 VerticalAlignment="Top"
-                                 Margin="0,0,5,0"
-                                 ToolTip="Enable/Disable Dither Settings Optimizer"
-                                 Style="{DynamicResource ToggleSwitchStyle}"/>
-                    </Grid>
+                    <ContentControl Content="{Binding OptimizerStatus}"
+                                    ContentTemplate="{StaticResource SectionStatusCardTemplate}"/>
                 </Border>
 
-                <!-- Action Buttons -->
-                <Border Background="{DynamicResource SecondaryBackgroundBrush}"
-                       BorderBrush="{DynamicResource BorderBrush}"
-                       BorderThickness="1"
-                       Padding="10">
-                    <StackPanel>
-                        <TextBlock Text="Actions" 
-                                  FontSize="14" 
-                                  FontWeight="SemiBold" 
-                                  Foreground="{DynamicResource PrimaryBrush}"
-                                  Margin="0,0,0,10"/>
+                <!-- Actions toolbar: slim, no header, right-aligned - folds the former
+                     standalone "Actions" card into a single low-weight row (Step 7). -->
+                <Border Style="{StaticResource SectionCardStyle}">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Clear Data"
+                               Tag="{StaticResource IconDeleteGeometry}"
+                               Command="{Binding ClearDataCommand}"
+                               Style="{StaticResource IconTextButtonStyle}"
+                               Margin="0,0,4,0"
+                               ToolTip="Clear all statistics for the active profile"/>
 
-                        <UniformGrid Columns="1" Rows="2">
-                            <Button Content="Clear Data" 
-                                   Command="{Binding ClearDataCommand}" 
-                                   Style="{StaticResource QualityButton}"
-                                   Padding="10,8"
-                                   Margin="0,0,0,5"/>
-
-                            <Button Content="📄 Export Events CSV" 
-                                   Command="{Binding ExportDitherEventsCsvCommand}" 
-                                   Style="{StaticResource QualityButton}"
-                                   Padding="10,8"
-                                   ToolTip="Export dither events to CSV (timestamps, pixel shifts, settle times)"/>
-                        </UniformGrid>
+                        <Button Content="Export Events CSV"
+                               Tag="{StaticResource IconExportGeometry}"
+                               Command="{Binding ExportDitherEventsCsvCommand}"
+                               Style="{StaticResource IconTextButtonStyle}"
+                               ToolTip="Export dither events to CSV (timestamps, pixel shifts, settle times)"/>
                     </StackPanel>
                 </Border>
 

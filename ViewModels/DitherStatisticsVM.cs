@@ -49,6 +49,11 @@ namespace DitherStatistics.Plugin {
             Title = "Dither Statistics";
             ContentId = "DitherStatistics_Panel";
 
+            // Info-box status wrappers for the Quality / Optimizer "disabled" cards.
+            // Created before settings load so the enable-toggle setters seed them.
+            QualityStatus = new SectionStatusDisplay("Quality Assessment", v => IsQualityAssessmentEnabled = v);
+            OptimizerStatus = new SectionStatusDisplay("Dither Settings Optimizer", v => IsDitherOptimizerEnabled = v);
+
             // Set Icon Geometry for the toggle button in NINA's Image area
             // Must be created on UI thread
             if (Application.Current != null) {
@@ -365,6 +370,7 @@ namespace DitherStatistics.Plugin {
                 RaisePropertyChanged();
                 RaisePropertyChanged(nameof(ShowQualityAssessment));
                 RaisePropertyChanged(nameof(ShowQualityDisabledMessage));
+                SyncQualityStatus();
 
                 // Save to profile settings
                 SaveQualityAssessmentSetting();
@@ -510,6 +516,7 @@ namespace DitherStatistics.Plugin {
                 RaisePropertyChanged();
                 RaisePropertyChanged(nameof(ShowDitherOptimizer));
                 RaisePropertyChanged(nameof(ShowDitherOptimizerDisabledMessage));
+                SyncOptimizerStatus();
                 SaveDitherOptimizerSetting();
             }
         }
@@ -537,8 +544,36 @@ namespace DitherStatistics.Plugin {
                 RaisePropertyChanged(nameof(RecommendationInfo));
                 RaisePropertyChanged(nameof(RecommendationWarning));
                 RaisePropertyChanged(nameof(HasRecommendationWarning));
+                RaisePropertyChanged(nameof(OptimizerProfiles));
             }
         }
+
+        // The three optimizer columns as a single collection so the view can render
+        // them from one DataTemplate. Regroups the already-formatted strings above;
+        // a fresh list is built each read and refreshed via the Recommendation setter.
+        public IReadOnlyList<OptimizerProfileDisplay> OptimizerProfiles => new[] {
+            new OptimizerProfileDisplay {
+                Name = "Strict", Quantile = "P90", Tagline = "slow",
+                SettlePixel = SettlePixelQuality, Arcsec = SettleArcsecQuality,
+                ExpectedSettle = ExpectedSettleQuality, Timeout = SettleTimeoutQuality,
+                IsRecommended = false,
+                ToolTip = "Strict: waits until guiding is well inside its normal range. Highest confidence, longest settling — does NOT improve image quality."
+            },
+            new OptimizerProfileDisplay {
+                Name = "Standard", Quantile = "P95", Tagline = "balanced",
+                SettlePixel = SettlePixelBalanced, Arcsec = SettleArcsecBalanced,
+                ExpectedSettle = ExpectedSettleBalanced, Timeout = SettleTimeoutBalanced,
+                IsRecommended = false,
+                ToolTip = "Standard: good confidence that guiding is back to normal with moderate settle times."
+            },
+            new OptimizerProfileDisplay {
+                Name = "Fast", Quantile = "P99", Tagline = "recommended",
+                SettlePixel = SettlePixelPerformance, Arcsec = SettleArcsecPerformance,
+                ExpectedSettle = ExpectedSettlePerformance, Timeout = SettleTimeoutPerformance,
+                IsRecommended = true,
+                ToolTip = "Fast: tolerance safely above the normal guiding scatter — settles quickly and rarely restarts. Recommended for most setups."
+            }
+        };
 
         public bool HasRecommendationData => Recommendation != null && Recommendation.DitherEventsAnalyzed >= 3;
         public bool ShowDitherOptimizer => IsDitherOptimizerEnabled && HasRecommendationData;
@@ -626,6 +661,28 @@ namespace DitherStatistics.Plugin {
 
         public bool HasRecommendationWarning => !string.IsNullOrEmpty(RecommendationWarning);
 
+        #endregion
+
+        #region Section status info boxes (shared "disabled / insufficient data" cards)
+
+        // Normalize the Quality and Optimizer "disabled / not enough data" info boxes
+        // onto one shape so a single DataTemplate renders both. Created before the
+        // settings are loaded so the enable-toggle setters can push their initial state.
+        public SectionStatusDisplay QualityStatus { get; }
+        public SectionStatusDisplay OptimizerStatus { get; }
+
+        private void SyncQualityStatus() {
+            QualityStatus?.Sync(
+                IsQualityAssessmentEnabled,
+                ShowQualityDisabledMessage ? "Quality Assessment disabled" : "Requires at least 4 dither events");
+        }
+
+        private void SyncOptimizerStatus() {
+            OptimizerStatus?.Sync(
+                IsDitherOptimizerEnabled,
+                ShowDitherOptimizerDisabledMessage ? "Dither Settings Optimizer disabled" : "Requires at least 3 dither events");
+        }
+
         private void LoadDitherOptimizerSetting() {
             try {
                 var value = settingsStore.ReadBool(PluginSettingsStore.OptimizerFileName);
@@ -655,6 +712,9 @@ namespace DitherStatistics.Plugin {
             try {
                 Application.Current?.Dispatcher.Invoke(() => {
                     Recommendation = e;
+                    // Refresh the settle chart so the P90/P95/P99 threshold lines
+                    // reflect the new recommendation immediately, not only on the next dither
+                    UpdateSettleTimeChart();
                     Logger.Info($"Dither recommendation updated on UI thread - Events: {e.DitherEventsAnalyzed}");
                 });
 
@@ -1096,7 +1156,6 @@ namespace DitherStatistics.Plugin {
                 RaisePropertyChanged();
                 RaisePropertyChanged(nameof(HasQualityData));
                 RaisePropertyChanged(nameof(ShowQualityAssessment));
-                RaisePropertyChanged(nameof(QualityRatingColor));
                 RaisePropertyChanged(nameof(CDValue));
                 RaisePropertyChanged(nameof(CDRating));
                 RaisePropertyChanged(nameof(GFM1xValue));
@@ -1113,15 +1172,9 @@ namespace DitherStatistics.Plugin {
 
         public bool HasQualityData => QualityResult != null && pixelShiftValues.Count >= 4;
 
-        public string QualityRatingColor => QualityResult?.QualityRating switch {
-            "Excellent" => "#4CAF50",
-            "Very Good" => "#66BB6A",
-            "Good" => "#8BC34A",
-            "Acceptable" => "#FFC107",
-            "Fair" => "#FF9800",
-            "Poor" => "#F44336",
-            _ => "#9E9E9E"
-        };
+        // The rating→colour palette lives in XAML now (RatingBadgeStyle DataTriggers
+        // keyed on QualityResult.QualityRating), so the semantic colours sit next to
+        // the rest of the view's design-system resources instead of in the VM.
 
         public string CDValue => QualityResult != null
             ? $"{QualityResult.CenteredL2Discrepancy:F4}"
@@ -1453,7 +1506,15 @@ namespace DitherStatistics.Plugin {
             try {
                 if (SettleTimePlot == null) return;
                 var primaryColor = NinaThemeWatcher.GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
-                SettleTimeChartRenderer.Render(SettleTimePlot, settleTimeValues, AverageSettleTime, StdDevSettleTime, primaryColor);
+                SettleTimeChartRenderer.Render(
+                    SettleTimePlot,
+                    settleTimeValues,
+                    AverageSettleTime,
+                    StdDevSettleTime,
+                    Recommendation?.ExpectedSettleDuration_Quality ?? 0,
+                    Recommendation?.ExpectedSettleDuration_Balanced ?? 0,
+                    Recommendation?.ExpectedSettleDuration_Performance ?? 0,
+                    primaryColor);
             } catch (Exception ex) {
                 Logger.Error($"Error updating settle time chart: {ex.Message}");
             }
