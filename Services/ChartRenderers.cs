@@ -45,6 +45,30 @@ namespace DitherStatistics.Plugin {
         }
 
         /// <summary>
+        /// Turns off ScottPlot's built-in mouse navigation. Both charts are
+        /// display-only: the renderers below recompute and set the axis limits on
+        /// every update, so an interactively panned/zoomed view is silently reverted
+        /// by the next dither anyway - there is no "reset view" affordance either.
+        ///
+        /// The wheel case is not merely cosmetic: WpfPlot handles MouseWheel without
+        /// marking the routed event handled, so turning the wheel while the pointer
+        /// sits over a chart scrolls the plugin panel *and* zooms the chart, about
+        /// the data coordinate under the pointer. On the short Settle Time chart the
+        /// pointer is usually below the data area, i.e. at a negative Y coordinate,
+        /// so the view collapses onto that coordinate and the chart renders blank
+        /// (no points, no threshold lines, one nonsensical negative Y tick) until the
+        /// next dither triggers a full re-render.
+        /// </summary>
+        public static void DisableInteractiveNavigation(ScottPlot.WpfPlot plot) {
+            plot.Configuration.ScrollWheelZoom = false;
+            plot.Configuration.LeftClickDragPan = false;
+            plot.Configuration.RightClickDragZoom = false;
+            plot.Configuration.MiddleClickDragZoom = false;
+            plot.Configuration.MiddleClickAutoAxis = false;
+            plot.Configuration.DoubleClickBenchmark = false;
+        }
+
+        /// <summary>
         /// Renders a centered "no data yet" placeholder with a small fixed axis
         /// range instead of ScottPlot's dense default grid on an empty dataset.
         /// </summary>

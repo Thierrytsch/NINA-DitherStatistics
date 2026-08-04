@@ -62,3 +62,8 @@
   - Settle delays are measured from the actual GuidingDithered event and require 3 consecutive stable frames (debounce against transient dips); the old bounded-positive-period detection incl. dummy periods and fallback estimator was removed
   - The reference thresholds valid at collection time are stored per dither series, keeping multi-session persisted data self-consistent; data saved by older versions still loads (analyzed with fallbacks)
   - Diagnostic file `*_positive_periods.txt` replaced by `*_settle_analysis.txt` (per-series settle outcome and time-to-stable per profile)
+
+## 1.6.0.1
+- Clarified log message when PHD2 settles without a dither (e.g. when guiding starts/resumes) - this is expected behavior, previously logged as a warning
+- Fixed: scrolling the plugin panel with the mouse wheel no longer zooms the charts underneath the pointer - this scrolled the panel and zoomed the chart at the same time, which typically left the Settle Time History chart blank (no points, no Avg ± StdDev band, no P90/P95/P99 lines, a single negative Y tick) until the next dither redrew it; the charts are display-only now and ignore pan/zoom input
+- Fixed: both charts are redrawn when their control is resized (window resize, dock layout change, first layout after a restore), so the Pixel Shift chart no longer keeps the visible range of its previous width

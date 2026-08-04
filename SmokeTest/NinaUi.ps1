@@ -76,10 +76,11 @@ function Show-NinaImagingTab {
     }
 }
 
-# Sends mouse-wheel events to a text-only region of the plugin panel (45%
-# window width / 72% height - proven safe spot: everything that slides under
-# the cursor there is text, never a ScottPlot chart, which would zoom instead
-# of scroll). Positive wheel delta (Up) scrolls the panel content up (toward
+# Sends mouse-wheel events to a text region of the plugin panel (45% window
+# width / 72% height). The charts ignore wheel input since ChartTheme
+# .DisableInteractiveNavigation was added, so a chart sliding under the cursor
+# no longer zooms instead of scrolling; the spot is kept because it is also
+# free of toggles and buttons. Positive wheel delta (Up) scrolls the panel content up (toward
 # the charts); negative delta (Down) scrolls toward the lower sections
 # (quality metrics, Dither Settings Optimizer, Actions).
 function Invoke-PanelScroll {

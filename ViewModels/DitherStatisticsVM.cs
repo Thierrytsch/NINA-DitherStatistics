@@ -171,12 +171,20 @@ namespace DitherStatistics.Plugin {
                     var primaryColor = NinaThemeWatcher.GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
                     ChartTheme.ApplyColors(pixelShiftPlot, primaryColor);
 
+                    // Display-only chart - no ScottPlot pan/zoom (see the helper for why
+                    // the wheel in particular used to scramble the charts)
+                    ChartTheme.DisableInteractiveNavigation(pixelShiftPlot);
+
                     // ✅ Attach tooltip event handlers
                     ChartTooltipHelper.AttachPixelShiftTooltip(
                         pixelShiftPlot,
                         () => pixelShiftValues,
                         text => PixelShiftTooltipText = text,
                         visible => PixelShiftTooltipVisible = visible);
+
+                    // Re-render once the control actually has a size (see the factory)
+                    pixelShiftSizeChangedHandler = CreateChartResizeRefresher(UpdatePixelShiftChart);
+                    pixelShiftPlot.SizeChanged += pixelShiftSizeChangedHandler;
 
                     Logger.Info("PixelShiftPlot created (lazy loading)");
                 }
@@ -206,12 +214,20 @@ namespace DitherStatistics.Plugin {
                     var primaryColor = NinaThemeWatcher.GetThemeColor("PrimaryBrush", System.Drawing.Color.White);
                     ChartTheme.ApplyColors(settleTimePlot, primaryColor);
 
+                    // Display-only chart - no ScottPlot pan/zoom (see the helper for why
+                    // the wheel in particular used to scramble the charts)
+                    ChartTheme.DisableInteractiveNavigation(settleTimePlot);
+
                     // ✅ Attach tooltip event handlers
                     ChartTooltipHelper.AttachSettleTimeTooltip(
                         settleTimePlot,
                         () => settleTimeValues,
                         text => SettleTimeTooltipText = text,
                         visible => SettleTimeTooltipVisible = visible);
+
+                    // Re-render once the control actually has a size (see the factory)
+                    settleTimeSizeChangedHandler = CreateChartResizeRefresher(UpdateSettleTimeChart);
+                    settleTimePlot.SizeChanged += settleTimeSizeChangedHandler;
 
                     Logger.Info("SettleTimePlot created (lazy loading)");
                 }
@@ -221,6 +237,45 @@ namespace DitherStatistics.Plugin {
                 settleTimePlot = value;
                 RaisePropertyChanged();
             }
+        }
+
+        // Kept so Dispose can detach them again (the WpfPlot instances outlive the
+        // panel in NINA's dock layout when the plugin is unloaded)
+        private SizeChangedEventHandler pixelShiftSizeChangedHandler;
+        private SizeChangedEventHandler settleTimeSizeChangedHandler;
+
+        /// <summary>
+        /// Builds a SizeChanged handler that rebuilds the given chart once its
+        /// WpfPlot control has a usable size. ScottPlot repaints the existing figure
+        /// on resize, but everything our renderers derive from the control size has
+        /// to be recomputed: the Pixel Shift chart's AxisScaleLock makes the visible
+        /// range strictly proportional to the control's pixel width, so after a
+        /// window/dock resize ScottPlot keeps the X range of the old width and
+        /// stretches Y instead. The same handler covers the first layout pass:
+        /// RestoreStatisticsData renders through these properties before WPF has
+        /// arranged the controls, i.e. while they still report 0 x 0.
+        ///
+        /// Each handler owns its own re-entrancy flag (captured local) so a render
+        /// that would raise SizeChanged again cannot recurse; sizes below 1 px are
+        /// ignored because there is nothing to render into yet. WPF only raises
+        /// SizeChanged when the size really changed, so an unchanged size is already
+        /// a no-op.
+        /// </summary>
+        private SizeChangedEventHandler CreateChartResizeRefresher(Action updateChart) {
+            bool isRefreshing = false;
+            return (s, e) => {
+                if (isRefreshing) return;
+                if (e.NewSize.Width < 1 || e.NewSize.Height < 1) return;
+
+                isRefreshing = true;
+                try {
+                    updateChart();
+                } catch (Exception ex) {
+                    Logger.Error($"Error refreshing chart after resize: {ex.Message}");
+                } finally {
+                    isRefreshing = false;
+                }
+            };
         }
 
         #endregion
@@ -1345,7 +1400,7 @@ namespace DitherStatistics.Plugin {
             try {
                 var dither = currentDither;
                 if (dither == null) {
-                    Logger.Warning("⚠️ SettleDone received but no currentDither exists (race condition?)");
+                    Logger.Info("SettleDone without preceding GuidingDithered ignored - normal when PHD2 settles after guiding starts/resumes (not a dither)");
                     return;
                 }
 
@@ -1668,8 +1723,19 @@ namespace DitherStatistics.Plugin {
                     guiderMediator.RemoveConsumer(this);
                 }
 
-                PixelShiftPlot?.Plot?.Clear();
-                SettleTimePlot?.Plot?.Clear();
+                // Backing fields, not the properties: the lazy getters would create a
+                // WpfPlot during teardown (and possibly off the UI thread)
+                if (pixelShiftPlot != null && pixelShiftSizeChangedHandler != null) {
+                    pixelShiftPlot.SizeChanged -= pixelShiftSizeChangedHandler;
+                    pixelShiftSizeChangedHandler = null;
+                }
+                if (settleTimePlot != null && settleTimeSizeChangedHandler != null) {
+                    settleTimePlot.SizeChanged -= settleTimeSizeChangedHandler;
+                    settleTimeSizeChangedHandler = null;
+                }
+
+                pixelShiftPlot?.Plot?.Clear();
+                settleTimePlot?.Plot?.Clear();
 
                 Logger.Info("DitherStatisticsVM disposed");
             } catch (Exception ex) {

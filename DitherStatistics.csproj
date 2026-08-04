@@ -21,9 +21,9 @@
 	<!-- CENTRAL VERSION - ONLY CHANGE HERE! -->
 	<!-- ============================================ -->
 	<PropertyGroup>
-		<Version>1.6.0.0</Version>
-		<AssemblyVersion>1.6.0.0</AssemblyVersion>
-		<FileVersion>1.6.0.0</FileVersion>
+		<Version>1.6.0.1</Version>
+		<AssemblyVersion>1.6.0.1</AssemblyVersion>
+		<FileVersion>1.6.0.1</FileVersion>
 	</PropertyGroup>
 
 	<!-- ============================================ -->
@@ -129,6 +129,7 @@ Keep separate statistics for different targets or telescopes:
 * Collection window now follows the actual settle (SettleDone + 10 guide steps, max 120 s) instead of a fixed 30 s
 * Settle delays are now measured from the actual dither event with 3-frame debouncing against transient dips
 * Per-dither reference thresholds are stored, keeping multi-session persisted data self-consistent
+* Fixed (1.6.0.1): mouse wheel over a chart no longer zoomed it while also scrolling the panel underneath, which could leave the Settle Time History chart blank until the next dither; both charts are now display-only and redraw correctly on resize
 
 # Version 1.5 Changes
 * NEW: Multiple statistics profiles - keep separate statistics per target or telescope, selectable via an editable profile box in the Statistics panel (default: off)
