@@ -29,7 +29,7 @@ The plugin version is defined **once** in `DitherStatistics.csproj` (`<Version>`
 
 The plugin GUID lives in `Properties/AssemblyInfo.cs` — **never change it**, NINA uses it as the persistent plugin identity.
 
-Current version: **1.6.0.0**. Feature milestones relevant to the architecture below (full detail in `CHANGELOG.md`):
+Current version: **1.6.0.1**. Feature milestones relevant to the architecture below (full detail in `CHANGELOG.md`):
 - **1.4** — multi-session statistics persistence ("Keep across sessions" toggle).
 - **1.5** — multiple statistics profiles (per target/telescope) with automatic v1.4→Default migration; reworked quality assessment (real drizzle-weight simulation, Drift Ratio metric, guider→main-camera pixel-scale conversion, configurable drizzle pixfrac).
 - **1.6** — Dither Settings Optimizer redesigned around empirical quantiles (P90/P95/P99 = Strict/Standard/Fast); corrected min-settle-time semantics; new Settle Timeout and Expected Settle recommendations; failed/star-lost dithers excluded; settle-follows-actual-SettleDone collection window (see the Optimizer subsections under **Architecture**).
