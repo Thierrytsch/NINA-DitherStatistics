@@ -60,7 +60,7 @@
 		<!-- URLs -->
 		<AssemblyMetadata Include="Repository" Value="https://github.com/Thierrytsch/NINA-DitherStatistics" />
 		<AssemblyMetadata Include="Homepage" Value="https://github.com/Thierrytsch/NINA-DitherStatistics" />
-		<AssemblyMetadata Include="ChangelogURL" Value="https://github.com/Thierrytsch/NINA-DitherStatistics/CHANGELOG.md" />
+		<AssemblyMetadata Include="ChangelogURL" Value="https://github.com/Thierrytsch/NINA-DitherStatistics/blob/main/CHANGELOG.md" />
 
 		<!-- Tags -->
 		<AssemblyMetadata Include="Tags" Value="imaging,guiding,dithering,statistics,phd2,quality,analysis,optimizer,settle" />
