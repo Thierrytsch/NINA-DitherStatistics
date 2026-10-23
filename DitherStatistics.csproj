@@ -21,9 +21,9 @@
 	<!-- CENTRAL VERSION - ONLY CHANGE HERE! -->
 	<!-- ============================================ -->
 	<PropertyGroup>
-		<Version>1.6.0.1</Version>
-		<AssemblyVersion>1.6.0.1</AssemblyVersion>
-		<FileVersion>1.6.0.1</FileVersion>
+		<Version>1.6.0.2</Version>
+		<AssemblyVersion>1.6.0.2</AssemblyVersion>
+		<FileVersion>1.6.0.2</FileVersion>
 	</PropertyGroup>
 
 	<!-- ============================================ -->
@@ -130,6 +130,7 @@ Keep separate statistics for different targets or telescopes:
 * Settle delays are now measured from the actual dither event with 3-frame debouncing against transient dips
 * Per-dither reference thresholds are stored, keeping multi-session persisted data self-consistent
 * Fixed (1.6.0.1): mouse wheel over a chart no longer zoomed it while also scrolling the panel underneath, which could leave the Settle Time History chart blank until the next dither; both charts are now display-only and redraw correctly on resize
+* Changed (1.6.0.2): log messages no longer contain emojis and are worded in a plain, N.I.N.A.-style format
 
 # Version 1.5 Changes
 * NEW: Multiple statistics profiles - keep separate statistics per target or telescope, selectable via an editable profile box in the Statistics panel (default: off)

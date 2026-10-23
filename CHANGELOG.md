@@ -67,3 +67,7 @@
 - Clarified log message when PHD2 settles without a dither (e.g. when guiding starts/resumes) - this is expected behavior, previously logged as a warning
 - Fixed: scrolling the plugin panel with the mouse wheel no longer zooms the charts underneath the pointer - this scrolled the panel and zoomed the chart at the same time, which typically left the Settle Time History chart blank (no points, no Avg ± StdDev band, no P90/P95/P99 lines, a single negative Y tick) until the next dither redrew it; the charts are display-only now and ignore pan/zoom input
 - Fixed: both charts are redrawn when their control is resized (window resize, dock layout change, first layout after a restore), so the Pixel Shift chart no longer keeps the visible range of its previous width
+
+
+## 1.6.0.2
+- Changed: log messages no longer contain emojis and use a plain, N.I.N.A.-style wording (dither start/end entries merged and simplified)

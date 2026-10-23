@@ -97,7 +97,7 @@ namespace DitherStatistics.Plugin {
                 // Start reading events in background
                 readTask = Task.Run(() => ReadEventsAsync(cancellationTokenSource.Token));
 
-                Logger.Info("PHD2Client: Connected successfully!");
+                Logger.Info("PHD2Client: Connected");
                 ConnectionStatusChanged?.Invoke(this, Phd2ConnectionStatus.Connected);
 
                 // Query initial exposure time and guider pixel scale
@@ -284,7 +284,7 @@ namespace DitherStatistics.Plugin {
                 double dx = root.GetProperty("dx").GetDouble();
                 double dy = root.GetProperty("dy").GetDouble();
 
-                Logger.Info($"PHD2Client: 🎯 GuidingDithered (DITHER START) - dx={dx:F2}, dy={dy:F2}");
+                Logger.Info($"PHD2Client: GuidingDithered - dx={dx:F2}, dy={dy:F2}");
 
                 var args = new PHD2GuidingDitheredEventArgs {
                     DeltaX = dx,

@@ -1379,8 +1379,6 @@ namespace DitherStatistics.Plugin {
 
         private void OnPHD2GuidingDithered(object sender, PHD2GuidingDitheredEventArgs e) {
             try {
-                Logger.Info($"🎯 DITHER START detected via GuidingDithered! dx={e.DeltaX:F2}, dy={e.DeltaY:F2}");
-
                 // Create new dither event with pixel shift data
                 currentDither = new DitherEvent {
                     StartTime = DateTime.Now,
@@ -1389,7 +1387,7 @@ namespace DitherStatistics.Plugin {
                     Success = false
                 };
 
-                Logger.Info($"✅ Dither START recorded with pixel shift: ({e.DeltaX:F2}, {e.DeltaY:F2})");
+                Logger.Info($"Dither started: pixel shift ({e.DeltaX:F2}, {e.DeltaY:F2})");
 
             } catch (Exception ex) {
                 Logger.Error($"Error handling GuidingDithered: {ex.Message}");
@@ -1411,8 +1409,8 @@ namespace DitherStatistics.Plugin {
                     dither.SettleTime = (dither.EndTime.Value - dither.StartTime).TotalSeconds;
                 }
 
-                Logger.Info($"✅ DITHER END - Success={e.Success}, SettleTime={dither.SettleTime:F2}s, " +
-                    $"TotalFrames={e.TotalFrames}, DroppedFrames={e.DroppedFrames}");
+                Logger.Info($"Dither finished: success={e.Success}, settle time={dither.SettleTime:F2}s, " +
+                    $"total frames={e.TotalFrames}, dropped frames={e.DroppedFrames}");
 
                 // All live-state mutation happens on the UI thread (Invoke is synchronous),
                 // so it is serialized with profile switches which also run on the UI thread

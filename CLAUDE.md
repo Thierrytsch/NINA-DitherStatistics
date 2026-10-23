@@ -29,7 +29,7 @@ The plugin version is defined **once** in `DitherStatistics.csproj` (`<Version>`
 
 The plugin GUID lives in `Properties/AssemblyInfo.cs` — **never change it**, NINA uses it as the persistent plugin identity.
 
-Current version: **1.6.0.1**. Feature milestones relevant to the architecture below (full detail in `CHANGELOG.md`):
+Current version: **1.6.0.2**. Feature milestones relevant to the architecture below (full detail in `CHANGELOG.md`):
 - **1.4** — multi-session statistics persistence ("Keep across sessions" toggle).
 - **1.5** — multiple statistics profiles (per target/telescope) with automatic v1.4→Default migration; reworked quality assessment (real drizzle-weight simulation, Drift Ratio metric, guider→main-camera pixel-scale conversion, configurable drizzle pixfrac).
 - **1.6** — Dither Settings Optimizer redesigned around empirical quantiles (P90/P95/P99 = Strict/Standard/Fast); corrected min-settle-time semantics; new Settle Timeout and Expected Settle recommendations; failed/star-lost dithers excluded; settle-follows-actual-SettleDone collection window (see the Optimizer subsections under **Architecture**).
@@ -49,10 +49,13 @@ The functional test story has three stages (`SmokeTest/README.md` is the authori
 Test files by concern:
 - `StatisticsTests.cs`, `DitherQualityMetricsTests.cs`, `DitherAnalysisTests.cs`, `PixelScaleServiceTests.cs` — pure-math services (golden values, synthetic dither series, quantile/timeout formulas).
 - `PluginSettingsStoreTests.cs`, `StatisticsProfileServiceTests.cs` — settings/profile file I/O against a temp directory (roundtrip, missing/corrupt file → default, legacy migration, sanitization collisions).
+- `ExportServiceTests.cs` — CSV export stays culture-invariant under de-DE (period decimals, correct `F4` rounding), 9-column row shape.
 - `JsonContractTests.cs` — persistence-format property-name contract.
 - `DitherOptimizerServiceTests.cs` — the state machine driven directly via its `Handle*` methods (no socket): full dither cycle, rapid dithering, star-lost/settle-failed, disconnect/clear/restore semantics.
 - `FakePhd2Server.cs` + `Phd2EndToEndTests.cs` — a real `PHD2Client` over a real loopback socket to an in-process fake PHD2 (`FakePhd2Server`), wired to a `DitherOptimizerService` exactly as the VM wires it; covers TCP connect/read-loop, JSON-RPC round-trips, event parsing, malformed-line resilience, connection-lost vs. explicit-disconnect. Events are stamped `DateTime.Now` inside `PHD2Client`, so time-window scenarios stay in the `Handle*`-level tests.
+- `Phd2ConnectionManagerTests.cs` — reconnect policy over a real `PHD2Client`/`FakePhd2Server` loopback with shortened delays: connection-lost triggers reconnect, explicit disconnect and `Stop()` never do, retry-until-success once the server appears, `Stop()` mid-retry-loop halts it for good.
 - `Phd2IntegrationTests.cs` — `[Trait("Category","Integration")]`, gated by a custom `[Phd2Fact]` that probes `127.0.0.1:4400` and **skips** unless a real PHD2 is *guiding*; runs a live dither round-trip. Start PHD2 with `SmokeTest/Start-Phd2Guiding.ps1` first.
+- `SmokeTestBridgeTests.cs` — loopback-socket tests for the diagnostic bridge: get-state roundtrip, command dispatch, error handling, disabled flag, disposal.
 
 The stage-3 smoke test (`SmokeTest/Run-SmokeTest.ps1`) exercises the plugin end-to-end in real NINA by triggering dithers directly over PHD2's JSON-RPC API (port 4400) and driving the panel through `Services/SmokeTestBridge.cs` — no Sequencer, NINA hardware-connect, real hardware, or element-level UI Automation needed (NINA exposes no tab *content* to UIA2/UIA3 at all, only the window shell/tab headers — see `Spike-UiaVisibility.ps1` and the Defender/AMSI note below for why the bridge exists instead). One NINA session boots once (build/deploy → PHD2 simulator guiding → back up profiles/settings → enable persistence + the bridge flag → start NINA → connect the bridge → fill the reference window) and runs six scenarios in a fixed order, selectable via `-Scenario` (default `All`, ~16–18 min): `Baseline → Export → Profiles → Restart → PersistenceOff → Clear`. Baseline dithers N times and cross-checks the bridge's `get-state` against the profile JSON and the diagnostic file's P90/P95/P99 thresholds; Export drives `ExportCsv`/`ExportReport` and verifies CSV column count/row count/content and the quality-report sections against `get-state`; Profiles creates/dithers/switches/deletes a second profile and proves data separation from the base profile; Restart closes and reopens NINA and asserts every persisted settle/drift/count/optimizer value round-trips unchanged; PersistenceOff proves in-memory state survives with the toggle off and every profile file deleted, then that re-enabling flushes it back unchanged; Clear proves `ClearData` zeroes `get-state` and rewrites the active profile's file with an empty event array. Screenshots are named `<NN>_<scenario>_<what>.png`; artifacts (screenshots, `report.txt`, NINA log copies, `state_*.json` bridge dumps, diagnostic/export file copies) land in `SmokeTest/artifacts/<timestamp>/`. `-HoldForInspection` skips teardown and leaves NINA running so Claude can drive the live session with `Invoke-NinaUi.ps1` (`state`/`invoke`/`toggle`/`select-profile`/`scroll`/`screenshot`) during analysis — finish with `Complete-SmokeTest.ps1 -ArtifactDir <dir>` afterward. Deliberately still manual: theme switching, the unwired `Options.xaml` template stub (excluded from testing — all real functionality lives in the dockable panel), and the NINA-`GuiderInfo` pixel-scale path.
 
@@ -68,6 +71,60 @@ The stage-3 smoke test (`SmokeTest/Run-SmokeTest.ps1`) exercises the plugin end-
 - Screenshots require an actively displayed RDP session — `Test-ScreenCaptureAvailable` (a 1×1 px `CopyFromScreen` probe) fails the run fast otherwise; this cannot be worked around from a detached session.
 
 **Defender/AMSI naming constraint in the PowerShell smoke test:** the per-scenario functions are named `Test-<Name>Scenario`, **not** `Invoke-<Name>Scenario`. A cluster of five or more `Invoke-Baseline/Export/Profiles/Restart/PersistenceOff/Clear` identifiers in proximity matches Microsoft Defender's `HackTool:PowerShell/ApexToolkit.A` AMSI signature and blocks the whole script at runtime (`ScriptContainedMaliciousContent`). Because AMSI scans the in-memory script buffer, **file/folder exclusions do not suppress it** — the fix is the naming, not an exclusion. Do not rename the verb back to `Invoke-` in `SmokeTest/Scenarios.ps1` or the dispatcher `switch` in `SmokeTest/Run-SmokeTest.ps1`; keep any new scenario dispatcher off that identifier pattern.
+
+## Agents
+
+Recurring work in this repository runs in dedicated subagents (`.claude/agents/*.md`) so that build logs, test output and research dumps are summarized instead of flooding the main conversation. Automatic delegation hangs on each agent's `description`, but the binding routing rule is this table:
+
+| Trigger | Agent |
+|---|---|
+| After every change to `*.cs` / `*.xaml` / `*.csproj` | `build-runner` |
+| After every change to code or tests | `test-runner` |
+| After a coherent set of edits, before committing | `code-reviewer` — read-only, and it cannot run git: paste the diff or the changed file paths into the prompt |
+| Question about a NINA API signature or convention | `nina-api-researcher` — **never guess, never search the web in the main conversation** |
+| Subtask from a plan table | the `*-worker` named in that subtask's agent column — see § Planning and plan execution, which requires every plan to have one |
+
+- `build-runner` and `test-runner` run **instead of** `dotnet build` / `dotnet test` in the main conversation — do not run those commands directly.
+- The four `*-worker` agents (`opus-worker`, `sonnet-worker`, `haiku-worker`, `fable-worker`) are **not** auto-delegated. They are chosen deliberately from the agent column of a plan table; that is intended.
+- The stage-3 smoke test has no agent on purpose. It is manual, takes 16–18 minutes, needs an actively displayed RDP session, and carries the screenshot-inspection duty described under **Testing** — it is launched only when the maintainer asks for it, never as a side effect of another task.
+
+## Planning and plan execution
+
+**Writing a plan.** Every plan for this repository breaks the work into subtasks, and every subtask carries an explicit agent assignment: the plan's subtask table has an `Agent` (or `Model`) column naming one of `opus-worker`, `sonnet-worker`, `haiku-worker`, `fable-worker`. A plan without that column is incomplete — do not present it for approval. Assign per subtask, never one model for the whole plan; a single plan routinely mixes all four.
+
+The assignment is a judgment about **what a plausible-looking wrong answer would cost**, not about the size of the diff:
+
+| Assign | For |
+|---|---|
+| `opus-worker` | The PHD2 event/state machine, the lock boundaries in `DitherOptimizerService`, the quantile/settle/quality math, the pixel-scale chain, the persisted JSON format — anywhere a wrong result still looks right. Also any subtask that has to weigh a trade-off, or that may have to correct the specification it was given |
+| `sonnet-worker` | Well-specified work with light triage: verifying claims against the code, rewording that must stay faithful to the original meaning, multi-file edits with judgment calls |
+| `haiku-worker` | Fully specified, mechanical changes with no open questions |
+| `fable-worker` | Small, fast, tightly bounded changes — settings pass-through, formatting, documentation follow-up |
+
+When a subtask sits between two rows, assign the higher one. A subtask that verifies or re-derives a fact (rather than copying it from the plan) is at least `sonnet-worker`, because the plan's own claims are exactly what such a subtask exists to check.
+
+**Executing a plan.** Each subtask is dispatched to the agent its column names, via the Agent tool — it is not carried out inline in the main conversation. That is the point of the column: the assignment is made once, deliberately, while planning, and then honoured. Concretely:
+
+- Independent subtasks are dispatched in parallel; subtasks touching the same file are serialized, and each subtask prompt names the files it owns and the files other agents own concurrently.
+- Every subtask prompt states what the agent must verify against the code instead of taking on trust, and tells it to report a mismatch rather than silently following the plan.
+- Where a plan prescribes a verification baseline — the pass/fail/skip counts, a persisted profile JSON, a diagnostic file's thresholds, a smoke-test artifact dir — capture it **before** the first change and hand the numbers to the subtasks that must reproduce it.
+- Relay each worker's result faithfully, including its reported deviations — a subagent's report is not shown to the maintainer.
+
+The agents in § Agents above still fire on their own triggers during execution, independently of the plan table: `build-runner` and `test-runner` after changes, `nina-api-researcher` for any NINA API question, `code-reviewer` before a commit.
+
+## Subtask worker contract
+
+This is the shared contract for the four `*-worker` agents. It lives here, once, rather than in four agent files, so it stays maintainable in a single place. Every worker reads `CLAUDE.md` completely before its first edit and is bound by the following:
+
+- The extracted pure-math/IO services (`Statistics`, `DitherQualityMetrics`, `DitherAnalysis`, `PixelScaleService`, `PluginSettingsStore`, `StatisticsProfileService`) stay **Logger-free** and usable without the NINA runtime; the surrounding try/catch and `Logger.*` calls belong at the VM call sites.
+- Everything in English — code, comments, XML doc, logs, UI strings, commit messages. Leftover German in a file you are already editing gets translated as part of the change; never introduce new non-English text.
+- `JsonContractTests.cs` pins the persisted property names, including the `_Quality` / `_Balanced` / `_Performance` suffixes. A refactor must not change them. If a subtask appears to require it, report that instead of doing it.
+- The plugin GUID in `Properties/AssemblyInfo.cs` never changes. A version bump touches `Version` / `AssemblyVersion` / `FileVersion` in `DitherStatistics.csproj`, `CHANGELOG.md`, and the "Version X Changes" section of the `LongDescription` `AssemblyMetadata` together, or not at all.
+- In `SmokeTest/*.ps1`, scenario functions are named `Test-<Name>Scenario`, never `Invoke-` — see the Defender/AMSI note under **Testing**. Do not rename them back, and keep any new dispatcher off that identifier pattern.
+- **Never launch `SmokeTest/Run-SmokeTest.ps1` unless the subtask explicitly says to.** It is a 16–18-minute manual run that needs an active RDP session and obliges the caller to inspect every screenshot.
+- Before claiming done: run `dotnet build` **and** `dotnet test`, and report the actual numbers. The PHD2 integration tests auto-skip unless a real PHD2 is guiding, so a changed skip count is normal — report it as observed rather than treating it as a failure or hiding it.
+- Report honestly: skipped steps, adjusted tests and tests left red are named, never glossed over.
+- Output shape: `DONE` / `PARTIAL` / `BLOCKED` · changed files · build and test numbers · assumptions made · what was deliberately left open.
 
 ## Architecture
 

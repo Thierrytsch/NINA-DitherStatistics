@@ -125,8 +125,8 @@ packages/
 *.log
 /nul
 
-## Claude
-.claude/
+## Claude (keep .claude/agents and .claude/settings.json versioned)
+.claude/settings.local.json
 
 ## Smoke test run artifacts (screenshots, reports, log/data copies)
 /SmokeTest/artifacts/
