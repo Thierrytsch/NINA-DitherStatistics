@@ -71,3 +71,7 @@
 
 ## 1.6.0.2
 - Changed: log messages no longer contain emojis and use a plain, N.I.N.A.-style wording (dither start/end entries merged and simplified)
+
+## 1.6.0.3
+- Changed: routine PHD2 events are no longer logged as warnings (fixes GitHub issue #6) - "lock position lost" is logged at Debug level (expected whenever N.I.N.A. stops guiding for autofocus, meridian flip, centering or a filter change), "guiding paused/resumed" at Info level
+- Changed: PHD2 calibration-failed log entries now include PHD2's reason; PHD2 alert log entries include PHD2's message and use a log level matching the alert type (error, warning, info)

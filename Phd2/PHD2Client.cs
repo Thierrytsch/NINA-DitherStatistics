@@ -183,6 +183,23 @@ namespace DitherStatistics.Plugin {
         }
 
         /// <summary>
+        /// Returns a string property of a PHD2 event, or null when it is missing or not a string.
+        /// Never throws.
+        /// </summary>
+        private static string GetStringField(JsonElement root, string name) {
+            try {
+                if (root.ValueKind == JsonValueKind.Object
+                    && root.TryGetProperty(name, out JsonElement value)
+                    && value.ValueKind == JsonValueKind.String) {
+                    return value.GetString();
+                }
+            } catch (Exception) {
+                // Fall through: treat as missing
+            }
+            return null;
+        }
+
+        /// <summary>
         /// Process a JSON event line from PHD2
         /// </summary>
         private void ProcessEvent(string jsonLine) {
@@ -224,14 +241,45 @@ namespace DitherStatistics.Plugin {
                             StarLost?.Invoke(this, EventArgs.Empty);
                             break;
 
-                        // Important events to log
                         case "Paused":
                         case "Resumed":
-                        case "LockPositionLost":
-                        case "CalibrationFailed":
-                        case "Alert":
-                            Logger.Warning($"PHD2: {eventName}");
+                            Logger.Info($"PHD2: {eventName}");
                             break;
+
+                        case "LockPositionLost":
+                            // Expected on every routine guiding stop (autofocus, meridian flip,
+                            // centering, filter change), so it must not flood the log at Warning.
+                            Logger.Debug($"PHD2: {eventName}");
+                            break;
+
+                        case "CalibrationFailed": {
+                            string reason = GetStringField(root, "Reason");
+                            Logger.Warning(string.IsNullOrEmpty(reason)
+                                ? $"PHD2: {eventName}"
+                                : $"PHD2: {eventName}: {reason}");
+                            break;
+                        }
+
+                        case "Alert": {
+                            string msg = GetStringField(root, "Msg");
+                            string type = GetStringField(root, "Type");
+                            string text = string.IsNullOrEmpty(msg)
+                                ? $"PHD2: {eventName}"
+                                : $"PHD2: {eventName}: {msg}";
+                            switch (type?.ToLowerInvariant()) {
+                                case "error":
+                                    Logger.Error(text);
+                                    break;
+                                case "info":
+                                case "question":
+                                    Logger.Info(text);
+                                    break;
+                                default: // "warning", missing or unknown
+                                    Logger.Warning(text);
+                                    break;
+                            }
+                            break;
+                        }
 
                         // Informational events (log once)
                         case "CalibrationComplete":

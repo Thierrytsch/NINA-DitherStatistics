@@ -21,9 +21,9 @@
 	<!-- CENTRAL VERSION - ONLY CHANGE HERE! -->
 	<!-- ============================================ -->
 	<PropertyGroup>
-		<Version>1.6.0.2</Version>
-		<AssemblyVersion>1.6.0.2</AssemblyVersion>
-		<FileVersion>1.6.0.2</FileVersion>
+		<Version>1.6.0.3</Version>
+		<AssemblyVersion>1.6.0.3</AssemblyVersion>
+		<FileVersion>1.6.0.3</FileVersion>
 	</PropertyGroup>
 
 	<!-- ============================================ -->
@@ -131,6 +131,7 @@ Keep separate statistics for different targets or telescopes:
 * Per-dither reference thresholds are stored, keeping multi-session persisted data self-consistent
 * Fixed (1.6.0.1): mouse wheel over a chart no longer zoomed it while also scrolling the panel underneath, which could leave the Settle Time History chart blank until the next dither; both charts are now display-only and redraw correctly on resize
 * Changed (1.6.0.2): log messages no longer contain emojis and are worded in a plain, N.I.N.A.-style format
+* Fixed (1.6.0.3): routine PHD2 events (lock position lost, guiding paused/resumed) are no longer logged as warnings; PHD2 alerts and calibration failures now include PHD2's message
 
 # Version 1.5 Changes
 * NEW: Multiple statistics profiles - keep separate statistics per target or telescope, selectable via an editable profile box in the Statistics panel (default: off)

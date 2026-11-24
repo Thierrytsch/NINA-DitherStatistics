@@ -171,6 +171,89 @@ namespace DitherStatistics.Tests {
         }
 
         [Fact]
+        public async Task DiagnosticEvents_AreHandledGracefully_AndDoNotDisturbTheDitherCycle() {
+            using var server = new FakePhd2Server();
+            using var client = await ConnectAndWaitReady(server);
+
+            using var optimizer = new DitherOptimizerService(
+                () => client.CurrentGuideExposure,
+                () => client.GuiderPixelScaleArcsec,
+                tempDir);
+            client.GuidingDithered += (s, e) => optimizer.HandleGuidingDithered(e);
+            client.SettleDone += (s, e) => optimizer.HandleSettleDone(e);
+            client.GuideStep += (s, e) => optimizer.HandleGuideStep(e);
+            client.StarLost += (s, e) => optimizer.HandleStarLost();
+            client.GuidingStarted += (s, e) => optimizer.HandleGuidingStarted();
+
+            var statuses = new ConcurrentQueue<Phd2ConnectionStatus>();
+            client.ConnectionStatusChanged += (s, status) => statuses.Enqueue(status);
+            var guideSteps = new ConcurrentQueue<PHD2GuideStepEventArgs>();
+            PHD2GuidingDitheredEventArgs ditheredArgs = null;
+            PHD2SettleDoneEventArgs settleArgs = null;
+            DitherSettingsRecommendation recommendation = null;
+            using var recommendationFired = new ManualResetEventSlim(false);
+            client.GuideStep += (s, e) => guideSteps.Enqueue(e);
+            client.GuidingDithered += (s, e) => ditheredArgs = e;
+            client.SettleDone += (s, e) => settleArgs = e;
+            optimizer.DitherRecommendationUpdated += (s, r) => { recommendation = r; recommendationFired.Set(); };
+
+            // Reference window
+            for (int i = 0; i < 30; i++) {
+                server.SendGuideStep(0.3 + (i % 5) * 0.05, 0.3);
+            }
+            await WaitUntil(() => guideSteps.Count >= 30, "30 reference guide steps");
+
+            // Diagnostic / informational events, incl. missing and wrongly typed optional fields
+            server.SendRaw("{\"Event\":\"LockPositionLost\"}");
+            server.SendRaw("{\"Event\":\"Paused\"}");
+            server.SendRaw("{\"Event\":\"Resumed\"}");
+            server.SendRaw("{\"Event\":\"Alert\",\"Msg\":\"informational\",\"Type\":\"info\"}");
+            server.SendRaw("{\"Event\":\"Alert\",\"Msg\":\"are you sure?\",\"Type\":\"question\"}");
+            server.SendRaw("{\"Event\":\"Alert\",\"Msg\":\"careful\",\"Type\":\"warning\"}");
+            server.SendRaw("{\"Event\":\"Alert\",\"Msg\":\"broken\",\"Type\":\"error\"}");
+            server.SendRaw("{\"Event\":\"Alert\"}");
+            server.SendRaw("{\"Event\":\"Alert\",\"Msg\":\"no type\"}");
+            server.SendRaw("{\"Event\":\"Alert\",\"Type\":\"error\"}");
+            server.SendRaw("{\"Event\":\"Alert\",\"Msg\":42,\"Type\":7}");
+            server.SendRaw("{\"Event\":\"Alert\",\"Msg\":null,\"Type\":null}");
+            server.SendRaw("{\"Event\":\"CalibrationFailed\",\"Reason\":\"star lost\"}");
+            server.SendRaw("{\"Event\":\"CalibrationFailed\"}");
+            server.SendRaw("{\"Event\":\"CalibrationFailed\",\"Reason\":123}");
+
+            // Sentinel: events are processed in order, so once this step arrives
+            // all diagnostic events above have been consumed by the read loop
+            server.SendGuideStep(0.3, 0.3);
+            await WaitUntil(() => guideSteps.Count >= 31, "sentinel guide step after diagnostic events");
+            Assert.True(client.IsConnected);
+
+            // A normal dither cycle must still be recorded exactly as without the noise
+            server.SendGuidingDithered(5.0, 5.0);
+            await WaitUntil(() => ditheredArgs != null, "GuidingDithered event");
+            foreach (var d in new[] { 4.0, 2.0, 1.0, 0.3, 0.3, 0.3 }) {
+                server.SendGuideStep(d, 0);
+            }
+            server.SendSettleDone(status: 0, totalFrames: 6, droppedFrames: 1);
+            await WaitUntil(() => settleArgs != null, "SettleDone event");
+            Assert.True(settleArgs.Success);
+            for (int i = 0; i < 10; i++) {
+                server.SendGuideStep(0.3, 0.3);
+            }
+
+            Assert.True(recommendationFired.Wait(TimeSpan.FromSeconds(10)), "recommendation should fire after the window closes");
+            Assert.Equal(1, recommendation.DitherEventsAnalyzed);
+
+            var snapshot = optimizer.GetDitherAnalysisSnapshot();
+            Assert.Equal(16, snapshot.DitherData.Count);
+            var info = Assert.Single(snapshot.SeriesInfos);
+            Assert.True(info.SettleReceived);
+            Assert.False(info.SettleFailed);
+
+            Assert.True(client.IsConnected);
+            Assert.DoesNotContain(Phd2ConnectionStatus.ConnectionLost, statuses);
+            Assert.DoesNotContain(Phd2ConnectionStatus.Disconnected, statuses);
+        }
+
+        [Fact]
         public async Task EmptyKeepAliveLine_DoesNotTearDownTheConnection() {
             using var server = new FakePhd2Server();
             using var client = await ConnectAndWaitReady(server);

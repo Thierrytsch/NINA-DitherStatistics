@@ -447,7 +447,7 @@ The grading scale is quantile-calibrated for random dithering: "Good" (typically
 
 ---
 
-**Plugin Version**: 1.6.0.2 (Redesigned Dither Settings Optimizer)
+**Plugin Version**: 1.6.0.3 (Redesigned Dither Settings Optimizer)
 **N.I.N.A. Compatibility**: 3.0+  
 **Author**: Thierry Tschanz  
 **Repository**: [NINA-DitherStatistics](https://github.com/Thierrytsch/NINA-DitherStatistics)
